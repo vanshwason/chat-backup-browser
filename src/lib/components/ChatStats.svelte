@@ -3,22 +3,13 @@ import { onMount } from 'svelte';
 import * as m from '$lib/paraglide/messages';
 import { getLocale } from '$lib/paraglide/runtime';
 import type { ChatData } from '$lib/state.svelte';
+import type { PersonStats, StatsResult } from '$lib/workers/stats-worker';
 import Icon from './Icon.svelte';
 import IconButton from './IconButton.svelte';
 
 interface Props {
 	chat: ChatData;
 	onClose: () => void;
-}
-
-interface StatsResult {
-	messagesByParticipant: Record<string, number>;
-	messagesByDate: Record<string, number>;
-	messagesByHour: number[];
-	mostActiveParticipant: string;
-	mostActiveHour: number;
-	avgMessagesPerDay: number;
-	totalDays: number;
 }
 
 let { chat, onClose }: Props = $props();
@@ -50,10 +41,14 @@ onMount(() => {
 	};
 
 	// Serialize messages for the worker (Date objects don't survive postMessage)
-	const serializedMessages = chat.messages.map((m) => ({
-		timestamp: m.timestamp.toISOString(),
-		sender: m.sender,
-		isSystemMessage: m.isSystemMessage,
+	const serializedMessages = chat.messages.map((msg) => ({
+		timestamp: msg.timestamp.toISOString(),
+		sender: msg.sender,
+		isSystemMessage: msg.isSystemMessage,
+		content: msg.content,
+		isMediaMessage: msg.isMediaMessage,
+		mediaType: msg.mediaType,
+		hasFile: !!(msg as { mediaFile?: unknown }).mediaFile,
 	}));
 
 	worker.postMessage({
@@ -111,6 +106,115 @@ const maxMessages = $derived(
 );
 
 const maxHourCount = $derived(stats ? Math.max(...stats.messagesByHour) : 0);
+
+function formatSeconds(total: number | null): string {
+	if (total === null) return '–';
+	const s = Math.round(total);
+	const h = Math.floor(s / 3600);
+	const min = Math.floor((s % 3600) / 60);
+	const sec = s % 60;
+	if (h > 0) return `${h}h ${String(min).padStart(2, '0')}m`;
+	if (min > 0) return `${min}m ${String(sec).padStart(2, '0')}s`;
+	return `${sec}s`;
+}
+
+// People ordered like the "messages by participant" list
+const peopleColumns = $derived(
+	stats
+		? participantEntries
+				.map(([name]) => name)
+				.filter((name) => stats?.people[name])
+		: [],
+);
+
+type Row = {
+	label: string;
+	isViewOnce?: boolean;
+	value: (p: PersonStats) => string;
+	show?: (s: StatsResult) => boolean;
+};
+
+const n = (v: number) => v.toLocaleString(locale);
+const any = (key: keyof PersonStats) => (s: StatsResult) =>
+	Object.values(s.people).some((p) => Number(p[key]) > 0);
+
+const personRows: Row[] = [
+	{ label: m.stats_messages(), value: (p) => n(p.messages) },
+	{ label: m.stats_row_words(), value: (p) => n(p.words) },
+	{ label: m.stats_row_emojis(), value: (p) => n(p.emojis) },
+	{ label: m.stats_row_photos(), value: (p) => n(p.photos) },
+	{ label: m.stats_row_videos(), value: (p) => n(p.videos) },
+	{
+		label: m.stats_row_view_once_photos(),
+		isViewOnce: true,
+		value: (p) => n(p.viewOncePhotos),
+		show: any('viewOncePhotos'),
+	},
+	{
+		label: m.stats_row_view_once_videos(),
+		isViewOnce: true,
+		value: (p) => n(p.viewOnceVideos),
+		show: any('viewOnceVideos'),
+	},
+	{ label: m.stats_row_voice_notes(), value: (p) => n(p.voiceNotes) },
+	{ label: m.stats_row_stickers(), value: (p) => n(p.stickers) },
+	{ label: m.stats_row_gifs(), value: (p) => n(p.gifs), show: any('gifs') },
+	{
+		label: m.stats_row_documents(),
+		value: (p) => n(p.documents),
+		show: any('documents'),
+	},
+	{ label: m.stats_row_links(), value: (p) => n(p.links) },
+	{
+		label: m.stats_row_deleted(),
+		value: (p) => n(p.deleted),
+		show: any('deleted'),
+	},
+	{
+		label: m.stats_row_edited(),
+		value: (p) => n(p.edited),
+		show: any('edited'),
+	},
+	{
+		label: m.stats_row_calls_made(),
+		value: (p) => n(p.callsMade),
+		show: any('callsMade'),
+	},
+	{
+		label: m.stats_row_video_calls_made(),
+		value: (p) => n(p.videoCallsMade),
+		show: any('videoCallsMade'),
+	},
+	{
+		label: m.stats_row_calls_answered(),
+		value: (p) => n(p.callsAnswered),
+		show: any('callsMade'),
+	},
+	{
+		label: m.stats_row_calls_missed(),
+		value: (p) => n(p.callsMissed),
+		show: any('callsMade'),
+	},
+	{
+		label: m.stats_row_talk_time(),
+		value: (p) => formatSeconds(p.callSeconds),
+		show: any('callsMade'),
+	},
+	{
+		label: m.stats_row_conversations_started(),
+		value: (p) => n(p.conversationsStarted),
+	},
+	{
+		label: m.stats_row_reply_time(),
+		value: (p) => formatSeconds(p.medianReplySeconds),
+	},
+];
+
+const visibleRows = $derived(
+	stats
+		? personRows.filter((row) => !row.show || (stats && row.show(stats)))
+		: [],
+);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -213,6 +317,86 @@ const maxHourCount = $derived(stats ? Math.max(...stats.messagesByHour) : 0);
 						{/each}
 					</div>
 				</div>
+
+				<!-- Per person comparison -->
+				<div class="mb-8">
+					<h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">{m.stats_per_person()}</h3>
+					<div class="overflow-x-auto -mx-2">
+						<table class="w-full text-sm">
+							<thead>
+								<tr class="border-b border-gray-200 dark:border-gray-700">
+									<th class="text-left font-normal text-gray-500 dark:text-gray-400 px-2 py-2"></th>
+									{#each peopleColumns as name (name)}
+										<th class="text-right font-semibold text-gray-700 dark:text-gray-200 px-2 py-2 max-w-[9rem] truncate" title={name}>{name}</th>
+									{/each}
+								</tr>
+							</thead>
+							<tbody>
+								{#each visibleRows as row (row.label)}
+									<tr class="border-b border-gray-100 dark:border-gray-800 last:border-b-0">
+										<td class="text-gray-600 dark:text-gray-300 px-2 py-1.5">{row.label}</td>
+										{#each peopleColumns as name (name)}
+											<td class="text-right tabular-nums text-gray-800 dark:text-gray-100 px-2 py-1.5">{row.value(stats.people[name])}</td>
+										{/each}
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+					{#if visibleRows.some((row) => row.isViewOnce)}
+						<p class="mt-2 text-xs text-gray-400 dark:text-gray-500">{m.stats_view_once_note()}</p>
+					{/if}
+				</div>
+
+				<!-- Calls -->
+				{#if stats.calls.total > 0}
+					<div class="mb-8">
+						<h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">{m.stats_calls()}</h3>
+						<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+							<div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold text-[var(--color-whatsapp-teal)]">{n(stats.calls.total)}</div>
+								<div class="text-sm text-gray-500 dark:text-gray-400">{m.stats_calls_total()}</div>
+							</div>
+							<div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold text-[var(--color-whatsapp-teal)]">{n(stats.calls.answered)}</div>
+								<div class="text-sm text-gray-500 dark:text-gray-400">{m.stats_calls_answered()}</div>
+							</div>
+							<div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold text-[var(--color-whatsapp-teal)]">{n(stats.calls.missed)}</div>
+								<div class="text-sm text-gray-500 dark:text-gray-400">{m.stats_calls_missed()}</div>
+							</div>
+							<div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
+								<div class="text-2xl font-bold text-[var(--color-whatsapp-teal)]">{formatSeconds(stats.calls.totalSeconds)}</div>
+								<div class="text-sm text-gray-500 dark:text-gray-400">{m.stats_talk_time()}</div>
+							</div>
+						</div>
+						<p class="text-sm text-gray-600 dark:text-gray-300">
+							{m.stats_voice_video({ voice: n(stats.calls.voice), video: n(stats.calls.video) })}
+						</p>
+						{#if stats.calls.longest}
+							<p class="text-sm text-gray-600 dark:text-gray-300 mt-1">
+								{m.stats_longest_call({
+									duration: formatSeconds(stats.calls.longest.seconds),
+									caller: stats.calls.longest.caller,
+									date: new Date(stats.calls.longest.timestamp).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' }),
+								})}
+							</p>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- Busiest day -->
+				{#if stats.busiestDay}
+					<div class="mb-8">
+						<h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-2">{m.stats_busiest_day()}</h3>
+						<p class="text-gray-600 dark:text-gray-300">
+							{m.stats_busiest_day_value({
+								date: new Date(`${stats.busiestDay.date}T00:00:00`).toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' }),
+								count: n(stats.busiestDay.count),
+							})}
+						</p>
+					</div>
+				{/if}
 
 				<!-- Most active hour -->
 				<div class="mb-8">
