@@ -34,6 +34,8 @@ let isLoadingThumb = $state(false);
 
 // Video preview state
 let videoThumbnailUrl = $state<string | null>(null);
+// Videos streamed from the laptop server: let the browser fetch just the first frame
+let remoteVideoSrc = $state<string | null>(null);
 let videoFrameCache = $state<VideoFrameCache | null>(null);
 let isLoadingVideoFrames = $state(false);
 let isHoveringVideo = $state(false);
@@ -72,6 +74,10 @@ async function ensureThumbnail(): Promise<void> {
 async function ensureVideoThumbnail(): Promise<void> {
 	if (videoThumbnailUrl || isLoadingThumb) return;
 	if (item.type !== 'video') return;
+	if (item.media.remoteUrl) {
+		remoteVideoSrc = `${item.media.remoteUrl}#t=0.1`;
+		return;
+	}
 
 	isLoadingThumb = true;
 	try {
@@ -102,6 +108,8 @@ async function ensureAudioDuration(): Promise<void> {
 async function loadVideoFrames(): Promise<void> {
 	if (videoFrameCache || isLoadingVideoFrames) return;
 	if (item.type !== 'video') return;
+	// Scrub previews would download the whole video from the server
+	if (item.media.remoteUrl) return;
 
 	isLoadingVideoFrames = true;
 	try {
@@ -221,7 +229,7 @@ onDestroy(() => {
 
 <div
 	bind:this={rootEl}
-	class="group relative overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+	class="wa-thumb group relative overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
 >
 	<button
 		type="button"
@@ -257,6 +265,19 @@ onDestroy(() => {
 					class="h-full bg-[var(--color-whatsapp-teal)]"
 					style:width="{(videoFrameCache.frameCount > 1 ? currentFrameIndex / (videoFrameCache.frameCount - 1) : 1) * 100}%"
 				></div>
+			</div>
+		{:else if item.type === 'video' && remoteVideoSrc}
+			<video
+				src={remoteVideoSrc}
+				preload="metadata"
+				muted
+				playsinline
+				class="w-full h-full object-cover pointer-events-none"
+			></video>
+			<div class="absolute inset-0 flex items-center justify-center bg-black/20">
+				<div class="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+					<Icon name="play" size="lg" class="text-gray-800 ml-0.5" />
+				</div>
 			</div>
 		{:else if item.type === 'video' && videoThumbnailUrl}
 			<!-- Static video thumbnail -->
@@ -380,7 +401,7 @@ onDestroy(() => {
 		{/if}
 	</button>
 
-	<div class="px-2 py-2">
+	<div class="wa-thumb-caption px-2 py-2">
 		<p class="text-xs text-gray-600 dark:text-gray-300 truncate" title={item.name}>
 			{item.name}
 		</p>

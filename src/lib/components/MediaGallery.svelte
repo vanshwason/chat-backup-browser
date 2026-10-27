@@ -473,7 +473,7 @@ onDestroy(() => {
 							{dateItems.length}
 						</span>
 					</div>
-					<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+					<div class="wa-media-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
 						{#each dateItems as item (item.id)}
 							<MediaThumbnail
 								{item}

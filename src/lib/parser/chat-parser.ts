@@ -527,6 +527,10 @@ function detectMediaType(
 	| undefined {
 	const lower = normalizeForMediaMatching(content);
 
+	// iOS placeholders that name no file (also used for view-once media)
+	if (lower.includes('image omitted')) return 'image';
+	if (lower.includes('gif omitted')) return 'video';
+
 	if (
 		lower.includes('.jpg') ||
 		lower.includes('.png') ||

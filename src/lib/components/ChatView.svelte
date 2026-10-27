@@ -38,6 +38,12 @@ interface Props {
 	precomputedMessagesById?: Map<string, ChatMessage>;
 	/** Opens the shared media lightbox for the media file at this path (GH-92). */
 	onOpenMedia?: (path: string) => void;
+	/** Show sender names above bubbles (off for 1:1 chats on mobile). */
+	showSenders?: boolean;
+	/** Touch long-press on a message (mobile action sheet). */
+	onMessageLongPress?: (message: ChatMessage) => void;
+	/** Animate jumps to search results/bookmarks (off: jump instantly). */
+	smoothNavigation?: boolean;
 }
 
 // Default no-op function for isSearchMatch
@@ -57,6 +63,9 @@ let {
 	precomputedFlatItems,
 	precomputedMessagesById,
 	onOpenMedia,
+	showSenders = true,
+	onMessageLongPress,
+	smoothNavigation = false,
 }: Props = $props();
 
 // Performance optimization: chunk messages for progressive rendering
@@ -405,7 +414,11 @@ $effect(() => {
 					pendingHighlightId = capturedTargetId;
 					isNavigationScroll = true;
 
-					element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+					element.scrollIntoView({
+						behavior: smoothNavigation ? 'smooth' : 'auto',
+						block: 'center',
+					});
+					if (!smoothNavigation) setTimeout(handleScrollEnd, 50);
 
 					// Check again before async operation
 					if (currentSearchResultId !== capturedTargetId) {
@@ -489,8 +502,10 @@ async function scrollToMessageWithRetry(targetId: string): Promise<boolean> {
 
 				chatContainer.scrollTo({
 					top: scrollToPosition,
-					behavior: 'smooth',
+					behavior: smoothNavigation ? 'smooth' : 'auto',
 				});
+				// Instant jumps may not fire scrollend; highlight right away
+				if (!smoothNavigation) setTimeout(handleScrollEnd, 50);
 
 				setTimeout(() => {
 					isNavigationScroll = false;
@@ -700,7 +715,7 @@ function handleScroll() {
 					{chatTitle}
 					{bookmarkedMessageIds}
 					isOwn={currentUser !== undefined && message.sender === currentUser}
-					showSender={true}
+					showSender={showSenders}
 					searchQuery={searchQuery}
 					isSearchMatch={matchResult}
 					isCurrentSearchResult={message.id === currentSearchResultId}
@@ -708,6 +723,7 @@ function handleScroll() {
 					isHighlighted={message.id === persistentHighlightId}
 					{autoLoadMedia}
 					{onOpenMedia}
+					onLongPress={onMessageLongPress}
 				/>
 			</div>
 		{/if}

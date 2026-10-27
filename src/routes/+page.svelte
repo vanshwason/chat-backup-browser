@@ -31,6 +31,7 @@ import MediaLightbox from '$lib/components/MediaLightbox.svelte';
 import Modal from '$lib/components/Modal.svelte';
 import ModalContent from '$lib/components/ModalContent.svelte';
 import ModalHeader from '$lib/components/ModalHeader.svelte';
+import MobileApp from '$lib/components/mobile/MobileApp.svelte';
 import ReselectFileModal from '$lib/components/ReselectFileModal.svelte';
 import RestoreSessionModal from '$lib/components/RestoreSessionModal.svelte';
 import Toast from '$lib/components/Toast.svelte';
@@ -72,6 +73,12 @@ import {
 	storeFileHandle,
 	updatePersistedChat,
 } from '$lib/persistence.svelte';
+import {
+	fetchRemoteLibrary,
+	openRemoteArchive,
+	type RemoteChatInfo,
+	remoteArchiveId,
+} from '$lib/remote-library';
 import { appState, type ChatData, type LoadingChat } from '$lib/state.svelte';
 import {
 	getTranscriptionsForChat,
@@ -84,6 +91,19 @@ const isElectron = isElectronApp();
 
 // Detect if running in Electron on macOS (only macOS needs custom titlebar)
 const isElectronMac = checkIsElectronMac();
+
+// Phones get the WhatsApp-style mobile UI; the desktop app keeps this layout
+let isMobileUI = $state(false);
+$effect(() => {
+	if (!browser || isElectron) return;
+	const query = window.matchMedia('(max-width: 767px)');
+	const update = () => {
+		isMobileUI = query.matches;
+	};
+	update();
+	query.addEventListener('change', update);
+	return () => query.removeEventListener('change', update);
+});
 
 // Dark mode state - check if dark class is on html element
 let isDarkMode = $state(
@@ -481,6 +501,54 @@ async function handleFilesSelected(
 	}
 }
 
+// Chats served by the laptop's chat-library server (server/wa-server.mjs)
+let isRemoteLibrary = $state(false);
+let remoteLibraryChecked = false;
+$effect(() => {
+	if (!browser || isElectron || remoteLibraryChecked) return;
+	remoteLibraryChecked = true;
+	void loadRemoteLibrary();
+});
+
+async function loadRemoteLibrary() {
+	const library = await fetchRemoteLibrary();
+	if (!library || library.length === 0) return;
+	isRemoteLibrary = true;
+	await Promise.all(library.map((info) => loadRemoteChat(info)));
+}
+
+async function loadRemoteChat(info: RemoteChatInfo) {
+	const archiveId = remoteArchiveId(info);
+	if (appState.chats.some((c) => c.archiveId === archiveId)) return;
+
+	const loadingId = crypto.randomUUID();
+	loadingChats = [
+		...loadingChats,
+		{
+			id: loadingId,
+			filename: sanitizeFilename(info.name),
+			progress: 5,
+			stage: 'reading',
+		},
+	];
+	try {
+		const archive = await openRemoteArchive(info);
+		const parsed = await parseZipFile(archive, makeProgressCallback(loadingId));
+		const chatData: ChatData = { ...parsed, archiveId };
+		loadingChats = loadingChats.filter((lc) => lc.id !== loadingId);
+		appState.addChat(chatData);
+		// Media streams from the laptop, so show it inline like WhatsApp does
+		pageState.setAutoLoadMedia(archiveId, true);
+		startIndexWorker(chatData);
+	} catch (error) {
+		console.error('Error loading chat from library:', error);
+		loadingChats = loadingChats.filter((lc) => lc.id !== loadingId);
+		appState.setError(
+			error instanceof Error ? error.message : m.error_parse_failed(),
+		);
+	}
+}
+
 function handleSelectChat(index: number) {
 	appState.selectChat(index);
 	// Set the transcription language for this chat
@@ -630,6 +698,8 @@ $effect(() => {
 		try {
 			const persisted = await getPersistedChats();
 			if (persisted.length === 0) return;
+			// Chats come from the laptop library; no restore prompt needed
+			if (isRemoteLibrary) return;
 
 			// Seed rememberedChats from IndexedDB so toggle state is correct
 			// even if user skips the restore modal or clicks "Start Fresh"
@@ -998,6 +1068,24 @@ function handleGlobalSearchReselectSource(_archiveId: string) {
 }
 </script>
 
+{#if isMobileUI}
+	<MobileApp
+		chats={appState.chats}
+		{loadingChats}
+		{isRemoteLibrary}
+		{isDarkMode}
+		onToggleDarkMode={toggleDarkMode}
+		onSelectChat={handleSelectChat}
+		onImportFiles={(files) => handleFilesSelected(files)}
+		{currentUser}
+		{currentPerspective}
+		onSelectPerspective={selectPerspective}
+		autoLoadMedia={autoLoadMediaForCurrentChat}
+		onAutoLoadMediaChange={handleAutoLoadMediaChange}
+		{scrollToMessageId}
+		onNavigateToMessage={handleNavigateToBookmark}
+	/>
+{:else}
 <div class="h-screen flex flex-col bg-gray-100 dark:bg-gray-950">
 	<!-- Electron drag region for macOS titlebar (only shown in Electron on macOS) -->
 	{#if isElectronMac}
@@ -1648,6 +1736,7 @@ function handleGlobalSearchReselectSource(_archiveId: string) {
 	</div>
 {/if}
 </div>
+{/if}
 
 <!-- Media lightbox: rendered once at the app root (sibling of the main
      layout, outside .gallery-panel) so it is visible whether or not the

@@ -38,6 +38,8 @@ interface Props {
 	autoLoadMedia?: boolean;
 	/** Opens the shared media lightbox for the media file at this path (GH-92). */
 	onOpenMedia?: (path: string) => void;
+	/** Touch long-press on the bubble (mobile action sheet). */
+	onLongPress?: (message: ChatMessage) => void;
 }
 
 let {
@@ -54,7 +56,39 @@ let {
 	isHighlighted = false,
 	autoLoadMedia = false,
 	onOpenMedia,
+	onLongPress,
 }: Props = $props();
+
+// Touch long-press detection (only wired up when onLongPress is provided)
+const LONG_PRESS_MS = 500;
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let pressStart: { x: number; y: number } | null = null;
+
+function cancelLongPress() {
+	if (longPressTimer) clearTimeout(longPressTimer);
+	longPressTimer = null;
+	pressStart = null;
+}
+
+function handlePointerDown(e: PointerEvent) {
+	if (!onLongPress || e.pointerType !== 'touch') return;
+	pressStart = { x: e.clientX, y: e.clientY };
+	longPressTimer = setTimeout(() => {
+		longPressTimer = null;
+		navigator.vibrate?.(10);
+		onLongPress(message);
+	}, LONG_PRESS_MS);
+}
+
+function handlePointerMove(e: PointerEvent) {
+	if (!pressStart) return;
+	if (
+		Math.abs(e.clientX - pressStart.x) > 10 ||
+		Math.abs(e.clientY - pressStart.y) > 10
+	) {
+		cancelLongPress();
+	}
+}
 
 let containerRef = $state<HTMLDivElement | null>(null);
 let mediaUrl = $state<string | null>(null);
@@ -178,6 +212,15 @@ $effect(() => {
 			}, 600);
 		});
 	}
+});
+
+// Export placeholder such as "image omitted" / "video omitted" (e.g. view-once
+// media). Shown verbatim so the kind of media stays clear.
+const omittedText = $derived.by(() => {
+	const text = message.content
+		.replace(/[\u200B-\u200F\u2028-\u202F\uFEFF]/g, '')
+		.trim();
+	return /\bomitted\b/i.test(text) ? text : null;
 });
 
 // Check if this message has an actual media file that can be loaded
@@ -413,7 +456,15 @@ async function transcribeVoiceMessage() {
 		{/if}
 
 		<div
-			class="{bubbleWidthClass} rounded-lg px-3 py-2 shadow-sm transition-all {bubbleClass} {highlightClass} {shouldAnimate ? 'animate-search-highlight' : ''}"
+			class="wa-bubble {isOwn ? 'wa-own' : 'wa-in'} {bubbleWidthClass} rounded-lg px-3 py-2 shadow-sm transition-all {bubbleClass} {highlightClass} {shouldAnimate ? 'animate-search-highlight' : ''}"
+			onpointerdown={handlePointerDown}
+			onpointermove={handlePointerMove}
+			onpointerup={cancelLongPress}
+			onpointercancel={cancelLongPress}
+			oncontextmenu={(e) => {
+				if (onLongPress) e.preventDefault();
+			}}
+			role="presentation"
 		>
 			{#if showSender && !isOwn}
 				<div class="text-xs font-semibold text-[var(--color-whatsapp-teal)] mb-1">
@@ -445,8 +496,9 @@ async function transcribeVoiceMessage() {
 						{:else if message.mediaType === 'video'}
 							<div class="relative">
 								<video 
-									src={mediaUrl} 
+									src={message.mediaFile?.remoteUrl ? `${mediaUrl}#t=0.1` : mediaUrl} 
 									controls 
+									playsinline
 									class="max-w-full rounded-lg mb-1"
 									style="max-height: 300px;"
 									preload="metadata"
@@ -600,25 +652,25 @@ async function transcribeVoiceMessage() {
 					<div class="flex items-center gap-2 text-gray-400 dark:text-gray-500 py-1">
 						{#if message.mediaType === 'image'}
 							<Icon name="image" size="md" />
-							<span class="text-sm italic">{m.media_photo()}</span>
+							<span class="text-sm italic">{omittedText ?? m.media_photo()}</span>
 						{:else if message.mediaType === 'video'}
 							<Icon name="video" size="md" />
-							<span class="text-sm italic">{m.media_video()}</span>
+							<span class="text-sm italic">{omittedText ?? m.media_video()}</span>
 						{:else if message.mediaType === 'audio'}
 							<Icon name="audio" size="md" />
-							<span class="text-sm italic">{m.media_audio()}</span>
+							<span class="text-sm italic">{omittedText ?? m.media_audio()}</span>
 						{:else if message.mediaType === 'document'}
 							<Icon name="document" size="md" />
-							<span class="text-sm italic">{m.media_document()}</span>
+							<span class="text-sm italic">{omittedText ?? m.media_document()}</span>
 						{:else if message.mediaType === 'sticker'}
 							<Icon name="image" size="md" />
-							<span class="text-sm italic">{m.media_sticker()}</span>
+							<span class="text-sm italic">{omittedText ?? m.media_sticker()}</span>
 						{:else if message.mediaType === 'contact'}
 							<Icon name="user" size="md" />
-							<span class="text-sm italic">{m.media_contact()}</span>
+							<span class="text-sm italic">{omittedText ?? m.media_contact()}</span>
 						{:else}
 							<Icon name="file" size="md" />
-							<span class="text-sm italic">{m.media_attachment()}</span>
+							<span class="text-sm italic">{omittedText ?? m.media_attachment()}</span>
 						{/if}
 					</div>
 				{/if}
@@ -637,7 +689,9 @@ async function transcribeVoiceMessage() {
 			<div
 				class="text-[10px] text-gray-500 dark:text-gray-400 text-right mt-1 -mb-1"
 			>
-				{formatTime(message.timestamp, getLocale())}
+				<span class="wa-time-full">{formatTime(message.timestamp, getLocale())}</span>
+				<!-- Phones show only the time; date separators carry the date -->
+				<span class="wa-time-short hidden">{message.timestamp.toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' })}</span>
 			</div>
 		</div>
 

@@ -110,7 +110,7 @@ function handleKeydown(e: KeyboardEvent) {
 					{#if lightboxItem.messageId}
 						<button
 							type="button"
-							class="h-9 w-9 inline-flex items-center justify-center rounded-lg text-[var(--color-whatsapp-teal)] hover:bg-[var(--color-whatsapp-teal)]/10 dark:hover:bg-[var(--color-whatsapp-teal)]/15 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-whatsapp-teal)]/60"
+							class="h-9 px-2.5 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-medium whitespace-nowrap text-[var(--color-whatsapp-teal)] hover:bg-[var(--color-whatsapp-teal)]/10 dark:hover:bg-[var(--color-whatsapp-teal)]/15 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-whatsapp-teal)]/60"
 							onclick={() => {
 								const messageId = lightboxItem?.messageId;
 								closeLightbox();
@@ -127,6 +127,7 @@ function handleKeydown(e: KeyboardEvent) {
 							title={m.media_gallery_go_to_message()}
 						>
 							<Icon name="arrow-circle-right" size="md" />
+							<span>{m.media_gallery_go_to_message()}</span>
 						</button>
 					{:else}
 						<span class="text-xs text-gray-500 dark:text-gray-400 px-2 py-1 rounded-lg bg-gray-100 dark:bg-gray-700">

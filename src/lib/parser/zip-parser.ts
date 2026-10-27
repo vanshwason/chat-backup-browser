@@ -10,6 +10,7 @@ import {
 	type ArchiveId,
 	createSessionArchiveId,
 } from '../global-search/archive-identity';
+import type { RemoteArchive } from '../remote-library';
 import {
 	type ChatMessage,
 	normalizeTimestampView,
@@ -29,6 +30,8 @@ export interface MediaFile {
 	messageSender?: string;
 	blob?: Blob;
 	url?: string;
+	// Set when the file is streamed from the laptop chat-library server
+	remoteUrl?: string;
 	// For lazy loading
 	_zipEntry?: JSZip.JSZipObject;
 	_loaded?: boolean;
@@ -152,17 +155,25 @@ function looksLikeChatContent(content: string): boolean {
  * Parse a WhatsApp ZIP export file
  * Uses lazy loading for media files to handle large backups efficiently
  */
+function isRemoteArchive(
+	file: File | ArrayBuffer | RemoteArchive,
+): file is RemoteArchive {
+	return !(file instanceof ArrayBuffer) && !(file instanceof File);
+}
+
 export async function parseZipFile(
-	file: File | ArrayBuffer,
+	file: File | ArrayBuffer | RemoteArchive,
 	onProgress?: (progress: ParseProgress) => void,
 	archiveId?: ArchiveId,
 ): Promise<ParsedZipChat> {
 	const zip = new JSZip();
+	const remote = isRemoteArchive(file) ? file : null;
 
 	onProgress?.({ stage: 'extracting', progress: 0 });
 
-	// Load ZIP (JSZip doesn't support progress callback for loadAsync)
-	const contents = await zip.loadAsync(file);
+	// Load ZIP (JSZip doesn't support progress callback for loadAsync).
+	// Remote archives are already extracted by the server.
+	const contents = remote ?? (await zip.loadAsync(file as File | ArrayBuffer));
 
 	onProgress?.({ stage: 'extracting', progress: 30 });
 
@@ -245,6 +256,7 @@ export async function parseZipFile(
 					path,
 					type: mediaType,
 					size,
+					remoteUrl: (zipEntry as { remoteUrl?: string }).remoteUrl,
 					_zipEntry: zipEntry,
 					_loaded: false,
 				});
@@ -326,8 +338,10 @@ export async function parseZipFile(
 			// Strategy 2: Extract from ZIP filename
 			// e.g., "WhatsApp.Chat.-.+20.109.870.8253.zip" or "Chat with John.zip"
 			let zipBaseName: string | null = null;
-			if (file instanceof File) {
-				zipBaseName = file.name.replace(/\.zip$/i, '');
+			const zipFileName =
+				file instanceof File ? file.name : (remote?.name ?? null);
+			if (zipFileName) {
+				zipBaseName = zipFileName.replace(/\.zip$/i, '');
 				// Clean up common patterns from iOS/Android exports
 				zipBaseName = zipBaseName
 					.replace(/^WhatsApp\.Chat\.-\./, '') // "WhatsApp.Chat.-." prefix
@@ -338,6 +352,7 @@ export async function parseZipFile(
 						'',
 					) // "Chat with" prefix
 					.replace(/\+/g, ' ') // Replace + with space
+					.replace(/^[-–—\s]+/, '') // "WhatsApp Chat - Name" leaves "- Name"
 					.trim();
 			}
 
@@ -422,7 +437,7 @@ export async function parseZipFile(
 		mediaFiles,
 		hasMedia: mediaFiles.length > 0,
 		contacts,
-		_zip: zip,
+		_zip: remote ? undefined : zip,
 	};
 }
 
@@ -481,7 +496,70 @@ function matchMediaToMessages(
 		return message;
 	});
 
-	return result;
+	return matchOmittedMediaByTimestamp(result, mediaFiles);
+}
+
+// iOS names exported media "<seq>-PHOTO-2026-05-03-13-38-52.jpg" (local send
+// time), while some exports still say "image omitted" in the chat text.
+const TIMESTAMPED_MEDIA =
+	/^\d+-(PHOTO|VIDEO|GIF|AUDIO|STICKER)-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})\./i;
+
+const MEDIA_KIND_TO_TYPE: Record<string, ChatMessage['mediaType']> = {
+	PHOTO: 'image',
+	VIDEO: 'video',
+	GIF: 'video',
+	AUDIO: 'audio',
+	STICKER: 'sticker',
+};
+
+function localTimestampKey(date: Date): string {
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+}
+
+/**
+ * Links media messages that name no file ("image omitted") to the exported
+ * file sent at the same second, preferring a file of the same kind.
+ */
+function matchOmittedMediaByTimestamp(
+	messages: ChatMessage[],
+	mediaFiles: MediaFile[],
+): ChatMessage[] {
+	const byTime = new Map<string, Array<{ media: MediaFile; kind: string }>>();
+	for (const media of mediaFiles) {
+		if (media.messageId) continue;
+		const match = TIMESTAMPED_MEDIA.exec(media.name);
+		if (!match) continue;
+		const list = byTime.get(match[2]) ?? [];
+		list.push({ media, kind: match[1].toUpperCase() });
+		byTime.set(match[2], list);
+	}
+	if (byTime.size === 0) return messages;
+
+	return messages.map((message) => {
+		const withMedia = message as ChatMessage & { mediaFile?: MediaFile };
+		if (!message.isMediaMessage || withMedia.mediaFile) return message;
+
+		const candidates = byTime.get(localTimestampKey(message.timestamp));
+		if (!candidates?.length) return message;
+
+		const index = Math.max(
+			0,
+			candidates.findIndex(
+				(c) => MEDIA_KIND_TO_TYPE[c.kind] === message.mediaType,
+			),
+		);
+		const [{ media, kind }] = candidates.splice(index, 1);
+		media.messageId = message.id;
+		media.messageTimestamp = message.timestamp.toISOString();
+		media.messageSender = message.sender || undefined;
+
+		return {
+			...message,
+			mediaType: MEDIA_KIND_TO_TYPE[kind] ?? message.mediaType,
+			mediaFile: media,
+		} as ChatMessage & { mediaFile: MediaFile };
+	});
 }
 
 /**
@@ -550,6 +628,13 @@ function getMimeType(filename: string): string {
 export async function loadMediaFile(media: MediaFile): Promise<string> {
 	// Already loaded and cached
 	if (media.url && media._loaded) {
+		return media.url;
+	}
+
+	// Served by the chat-library server: stream it directly (supports seeking)
+	if (media.remoteUrl) {
+		media.url = media.remoteUrl;
+		media._loaded = true;
 		return media.url;
 	}
 

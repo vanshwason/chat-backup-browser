@@ -311,5 +311,21 @@
   "global_search_confirm": "Confirm",
   "global_search_cancel": "Cancel",
   "global_search_cancel_search": "Cancel search",
-  "global_search_progress": "{count} messages scanned"
+  "global_search_progress": "{count} messages scanned",
+  "mobile_chats_title": "Chats",
+  "mobile_search_chats": "Search",
+  "mobile_back": "Back",
+  "mobile_cancel": "Cancel",
+  "mobile_copy": "Copy",
+  "mobile_chat_info": "Chat info",
+  "mobile_media_links_docs": "Media, links and docs",
+  "mobile_show_media": "Show media automatically",
+  "mobile_loading_chats": "Loading chats from your laptop…",
+  "mobile_no_chats": "No chats yet",
+  "mobile_no_chats_hint": "Put WhatsApp export .zip files in the WA folder on your laptop, or import one from this phone.",
+  "mobile_you": "You",
+  "mobile_message_count": "{count} messages",
+  "mobile_from_laptop": "Served privately from your laptop",
+  "mobile_dark_mode": "Dark mode",
+  "mobile_tap_for_info": "tap here for chat info"
 }
