@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-WhatsApp Backup Reader - a hybrid SvelteKit + Electron app for parsing and viewing WhatsApp chat exports offline. Runs as both a web app (GitHub Pages) and desktop app.
+Chat Backup Browser - a hybrid SvelteKit + Electron app for parsing and viewing WhatsApp chat exports offline. Runs as both a web app (GitHub Pages) and desktop app.
 
 **Core principles**: 100% offline, privacy-first (no external API calls), all processing client-side.
 
@@ -68,10 +68,18 @@ To add translations: add key to `messages/en.json`, run `npm run machine-transla
 
 ### Dual-Target Builds
 
-- **Web**: Base path `/whats-reader` for GitHub Pages (when `GITHUB_PAGES=true`)
+- **Web**: Base path `/chat-backup-browser` for GitHub Pages (when `GITHUB_PAGES=true`)
 - **Electron**: Relative paths (`base: './'`) for `file://` loading
 
 Electron files: `electron/main.cjs`, `electron/preload.cjs`
+
+### Phone access
+
+`server/wa-server.mjs` serves `build/` plus the export ZIPs in `~/Documents/WA` on 127.0.0.1:8190, reached from the phone via `tailscale serve`. Below 768px in a browser the app renders `src/lib/components/mobile/MobileApp.svelte`. Setup: `docs/SETUP.md`.
+
+### Branding
+
+Icons are generated from `branding/logo.svg` with `node branding/generate-icons.mjs`. Never use WhatsApp's logo; name the app "Chat Backup Browser" and say "for WhatsApp exports", not "WhatsApp ...". Keep `NOTICE.md` (credit + AGPL + trademark disclaimer).
 
 ## Code Style (Biome)
 
@@ -108,3 +116,4 @@ Never manually edit `CHANGELOG.md` or `package.json` version.
 - **No ESLint** - project uses Biome
 - **No hardcoded strings** - use paraglide `m.key()`
 - **No heavy main-thread operations** - use workers
+- **Stay fast with huge chats** (36k+ messages, 4k+ media): window or batch every list, never mount hidden heavy panels, measure DOM size and frame time on the biggest chat before and after

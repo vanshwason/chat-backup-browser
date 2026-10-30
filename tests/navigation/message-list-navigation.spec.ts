@@ -17,7 +17,7 @@ async function makeChatZip(): Promise<Buffer> {
 test('GH-79 ArrowDown continues from an article that receives focus', async ({ page }) => {
 	await page.goto('/');
 	await expect(
-		page.getByRole('heading', { name: 'WhatsApp Backup Reader', level: 1 }),
+		page.getByRole('heading', { name: 'Chat Backup Browser', level: 1 }),
 	).toBeVisible();
 
 	await page.locator('input[type="file"]').first().setInputFiles({

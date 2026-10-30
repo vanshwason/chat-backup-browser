@@ -1244,80 +1244,115 @@ function handleGlobalSearchReselectSource(_archiveId: string) {
 			
 			<!-- Scrollable content area -->
 			<div class="flex-1 overflow-y-auto">
-				<div class="flex flex-col items-center p-4 sm:p-8 min-h-full">
-					<div class="max-w-lg w-full flex flex-col items-center py-8">
-					<!-- Logo and title -->
-					<div class="text-center mb-6">
-						<div class="w-32 h-32 mx-auto mb-4">
-							<img src={favicon} alt="WhatsApp Backup Reader" class="w-full h-full" />
-						</div>
-						<h1 class="text-2xl font-bold text-gray-800 dark:text-white mb-1">
-							{m.app_title()}
-						</h1>
-						<p class="text-sm text-gray-500 dark:text-gray-400">
-							{m.app_subtitle()}
-						</p>
-					</div>
-
-					<!-- Drop zone -->
-					<div class="w-full">
-						<FileDropZone onFilesSelected={handleFilesSelected} isLoading={isLoadingFiles} loadingProgress={loadingFilesProgress} />
-					</div>
-
-					{#if appState.error}
-						<div class="mt-4 w-full p-4 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">
-							<p class="text-red-700 dark:text-red-400 text-sm text-center">
-								{appState.error}
+				<div class="min-h-full grid lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+					<!-- Brand panel -->
+					<section class="welcome-hero relative overflow-hidden text-white px-6 sm:px-10 pt-20 pb-12 lg:py-16 flex flex-col justify-center">
+						<div class="relative max-w-md mx-auto lg:mx-0 lg:ml-auto w-full">
+							<img src={favicon} alt="" class="w-20 h-20 mb-6 drop-shadow-xl" />
+							<h1 class="text-3xl sm:text-4xl font-bold tracking-tight">
+								{m.app_title()}
+							</h1>
+							<p class="mt-3 text-base text-white/75">
+								{m.welcome_tagline()}
 							</p>
+
+							<ul class="mt-10 space-y-5">
+								<li class="flex gap-4">
+									<span class="welcome-feature-icon"><Icon name="lock" size="sm" /></span>
+									<div>
+										<p class="font-semibold">{m.welcome_feature_private_title()}</p>
+										<p class="text-sm text-white/65">{m.welcome_feature_private_desc()}</p>
+									</div>
+								</li>
+								<li class="flex gap-4">
+									<span class="welcome-feature-icon"><Icon name="bolt" size="sm" /></span>
+									<div>
+										<p class="font-semibold">{m.welcome_feature_fast_title()}</p>
+										<p class="text-sm text-white/65">{m.welcome_feature_fast_desc()}</p>
+									</div>
+								</li>
+								<li class="flex gap-4">
+									<span class="welcome-feature-icon"><Icon name="phone" size="sm" /></span>
+									<div>
+										<p class="font-semibold">{m.welcome_feature_phone_title()}</p>
+										<p class="text-sm text-white/65">{m.welcome_feature_phone_desc()}</p>
+									</div>
+								</li>
+							</ul>
 						</div>
-					{/if}
+					</section>
 
-				<!-- Instructions - Collapsible -->
-				<Collapsible title={m.export_instructions_title()} class="mt-6 w-full">
-					<div class="grid grid-cols-1 gap-2">
-						<FeatureItem badge={1}>{m.export_step_1()}</FeatureItem>
-						<FeatureItem badge={2}>{m.export_step_2()}</FeatureItem>
-						<FeatureItem badge={3}>{m.export_step_3()}</FeatureItem>
-						<FeatureItem badge={4}>{m.export_step_4()}</FeatureItem>
-						<FeatureItem badge={5}>{m.export_step_5()}</FeatureItem>
-					</div>
-				</Collapsible>
+					<!-- Open a chat -->
+					<section class="px-4 sm:px-10 py-10 lg:py-16 flex flex-col justify-center">
+						<div class="max-w-md mx-auto lg:mx-0 w-full">
+							<div class="rounded-2xl bg-white dark:bg-gray-900 shadow-sm ring-1 ring-black/5 dark:ring-white/10 p-6">
+								<h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+									{m.welcome_open_title()}
+								</h2>
+								<p class="mt-1 mb-5 text-sm text-gray-500 dark:text-gray-400">
+									{m.welcome_open_hint()}
+								</p>
+								<FileDropZone onFilesSelected={handleFilesSelected} isLoading={isLoadingFiles} loadingProgress={loadingFilesProgress} />
 
-				<!-- Privacy & Security - Collapsible -->
-				<Collapsible title={m.privacy_title()} class="mt-4 w-full">
-					<div class="grid grid-cols-1 gap-2">
-						<FeatureItem icon="wifi-off" variant="icon">{m.privacy_offline()}</FeatureItem>
-						<FeatureItem icon="shield" variant="icon">{m.privacy_local_processing()}</FeatureItem>
-						<FeatureItem icon="code" variant="icon">{m.privacy_local_ai()}</FeatureItem>
-						<FeatureItem icon="eye-off" variant="icon">{m.privacy_no_tracking()}</FeatureItem>
-						<FeatureItem icon="code" variant="icon">{m.privacy_open_source()}</FeatureItem>
-					</div>
-				</Collapsible>
+								{#if appState.error}
+									<div class="mt-4 w-full p-4 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">
+										<p class="text-red-700 dark:text-red-400 text-sm text-center">
+											{appState.error}
+										</p>
+									</div>
+								{/if}
+							</div>
 
-				<!-- GitHub Star -->
-				<div class="mt-4 flex flex-col items-center gap-1.5">
-					<span class="text-xs text-gray-400 dark:text-gray-500">{m.github_star_title()}</span>
-					<a
-						href="https://github.com/rodrigogs/whats-reader"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-md transition-colors text-xs font-medium"
-						onclick={(e) => {
-							if (isElectron && window.electronAPI?.openExternal) {
-								e.preventDefault();
-								window.electronAPI.openExternal('https://github.com/rodrigogs/whats-reader');
-							}
-						}}
-					>
-						<Icon name="github" size="sm" />
-						<Icon name="star" size="xs" class="text-yellow-400" filled />
-						{m.github_star_cta()}
-					</a>
+							<!-- Export steps, always visible -->
+							<div class="mt-6">
+								<h3 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+									{m.export_instructions_title()}
+								</h3>
+								<ol class="space-y-2.5">
+									{#each [m.export_step_1(), m.export_step_2(), m.export_step_3(), m.export_step_4(), m.export_step_5()] as step, i (i)}
+										<li class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
+											<span class="flex-shrink-0 w-6 h-6 rounded-full bg-[#25D366]/15 text-[#128C7E] dark:text-[#25D366] text-xs font-semibold flex items-center justify-center">{i + 1}</span>
+											<span class="pt-0.5">{step}</span>
+										</li>
+									{/each}
+								</ol>
+							</div>
+
+							<!-- Privacy & Security - Collapsible -->
+							<Collapsible title={m.privacy_title()} class="mt-6 w-full">
+								<div class="grid grid-cols-1 gap-2">
+									<FeatureItem icon="wifi-off" variant="icon">{m.privacy_offline()}</FeatureItem>
+									<FeatureItem icon="shield" variant="icon">{m.privacy_local_processing()}</FeatureItem>
+									<FeatureItem icon="code" variant="icon">{m.privacy_local_ai()}</FeatureItem>
+									<FeatureItem icon="eye-off" variant="icon">{m.privacy_no_tracking()}</FeatureItem>
+									<FeatureItem icon="code" variant="icon">{m.privacy_open_source()}</FeatureItem>
+								</div>
+							</Collapsible>
+
+							<!-- Legal and credit -->
+							<footer class="mt-8 space-y-1 text-xs text-gray-400 dark:text-gray-500">
+								<p>{m.welcome_disclaimer()}</p>
+								<p>
+									{m.welcome_credit()} ·
+									<a
+										href="https://github.com/vanshwason/chat-backup-browser"
+										target="_blank"
+										rel="noopener noreferrer"
+										class="underline hover:text-gray-600 dark:hover:text-gray-300"
+										onclick={(e) => {
+											if (isElectron && window.electronAPI?.openExternal) {
+												e.preventDefault();
+												window.electronAPI.openExternal('https://github.com/vanshwason/chat-backup-browser');
+											}
+										}}
+									>{m.welcome_source()}</a>
+								</p>
+							</footer>
+						</div>
+					</section>
 				</div>
 			</div>
 		</div>
-	</div>
-	</div>
 	{:else}
 		<!-- Main app layout -->
 		<div class="flex-1 flex flex-col overflow-hidden">

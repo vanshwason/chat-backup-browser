@@ -1,23 +1,33 @@
 {
-	"name": "whats-reader",
-	"productName": "WhatsApp Backup Reader",
+	"name": "chat-backup-browser",
+	"productName": "Chat Backup Browser",
 	"version": "1.31.0",
-	"description": "A desktop app to read and visualize WhatsApp chat exports",
+	"description": "Browse your WhatsApp chat exports offline, on desktop and on your phone. Not affiliated with WhatsApp or Meta.",
 	"license": "AGPL-3.0",
 	"author": {
-		"name": "Rodrigo Gomes da Silva",
-		"email": "rodrigo.smscom@gmail.com"
+		"name": "vanshwason",
+		"url": "https://github.com/vanshwason"
 	},
+	"contributors": [
+		{
+			"name": "Rodrigo Gomes da Silva",
+			"url": "https://github.com/rodrigogs",
+			"email": "rodrigo.smscom@gmail.com"
+		}
+	],
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/rodrigogs/whats-reader.git"
+		"url": "https://github.com/vanshwason/chat-backup-browser.git"
 	},
-	"homepage": "https://github.com/rodrigogs/whats-reader#readme",
+	"homepage": "https://github.com/vanshwason/chat-backup-browser#readme",
 	"bugs": {
-		"url": "https://github.com/rodrigogs/whats-reader/issues"
+		"url": "https://github.com/vanshwason/chat-backup-browser/issues"
 	},
 	"type": "module",
 	"main": "electron/main.cjs",
+	"engines": {
+		"node": ">=22.12"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
@@ -37,6 +47,7 @@
 		"electron:build:linux": "npm run build && electron-builder --linux",
 		"machine-translate": "inlang machine translate --project project.inlang",
 		"test": "svelte-kit sync && vitest run",
+		"test:server": "node scripts/test-phone-server.mjs",
 		"test:global-search:unit": "vitest run --config vitest.global-search.config.ts",
 		"test:global-search:privacy": "playwright test --config playwright.global-search.config.ts",
 		"test:global-search:e2e-port-collision": "tsx scripts/test-global-search-e2e-port-collision.ts",
@@ -47,7 +58,6 @@
 		"act:setup": "docker pull catthehacker/ubuntu:act-latest && test -f .act/secrets || cp .act/secrets.example .act/secrets",
 		"act:ci": "npm run act:ci:lint && npm run act:ci:typecheck && npm run act:ci:build",
 		"act:ci:lint": ".act/run push -W .github/workflows/ci.yml -e .act/events/push-dev.json -j lint",
-		"test:server": "node scripts/test-phone-server.mjs",
 		"act:ci:typecheck": ".act/run push -W .github/workflows/ci.yml -e .act/events/push-dev.json -j typecheck",
 		"act:ci:build": ".act/run push -W .github/workflows/ci.yml -e .act/events/push-dev.json -j build",
 		"act:release": ".act/run push -W .github/workflows/release.yml --secret-file .act/secrets -e .act/events/push-main.json",
@@ -92,13 +102,13 @@
 		"wait-on": "^9.0.4"
 	},
 	"build": {
-		"appId": "com.whatsapp.backup-reader",
-		"productName": "WhatsApp Backup Reader",
+		"appId": "io.github.vanshwason.chatbackupbrowser",
+		"productName": "Chat Backup Browser",
 		"afterPack": "./scripts/afterPack.cjs",
 		"publish": {
 			"provider": "github",
-			"owner": "rodrigogs",
-			"repo": "whats-reader"
+			"owner": "vanshwason",
+			"repo": "chat-backup-browser"
 		},
 		"directories": {
 			"output": "dist-electron"

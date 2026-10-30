@@ -1,6 +1,6 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "app_title": "WhatsApp バックアップリーダー",
+  "app_title": "Chat Backup Browser",
   "app_subtitle": "WhatsAppチャットのエクスポートを表示・分析",
   "theme_switch_to_light": "ライトモードに切り替え",
   "theme_switch_to_dark": "ダークモードに切り替え",

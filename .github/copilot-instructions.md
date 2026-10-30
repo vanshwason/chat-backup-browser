@@ -1,4 +1,4 @@
-# WhatsApp Backup Reader - AI Agent Instructions
+# Chat Backup Browser - AI Agent Instructions
 
 ## Architecture Overview
 
@@ -129,7 +129,7 @@ interface ChatData {
 ### Dual-Target Builds
 
 **SvelteKit adapter-static** generates single-page app:
-- **Web**: Base path `/whats-reader` for GitHub Pages (when `GITHUB_PAGES=true`)
+- **Web**: Base path `/chat-backup-browser` for GitHub Pages (when `GITHUB_PAGES=true`)
 - **Electron**: Relative paths (`base: './'`) to load from `file://`
 
 `svelte.config.js` switches between these using `process.env.GITHUB_PAGES`.

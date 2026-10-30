@@ -1,6 +1,6 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "app_title": "WhatsApp 备份阅读器",
+  "app_title": "Chat Backup Browser",
   "app_subtitle": "查看和分析您的 WhatsApp 聊天导出",
   "theme_switch_to_light": "切换到浅色模式",
   "theme_switch_to_dark": "切换到深色模式",

@@ -1,7 +1,7 @@
 {
-  "name": "WhatsApp Backup Reader",
-  "short_name": "WhatsReader",
-  "description": "Read and browse your WhatsApp chat exports with media support, audio transcription, and bookmarks - 100% offline and private",
+  "name": "Chat Backup Browser",
+  "short_name": "Chat Backup",
+  "description": "Browse your WhatsApp chat exports offline on desktop and phone: media, search, stats and bookmarks. 100% private. Not affiliated with WhatsApp or Meta.",
   "icons": [
     {
       "src": "web-app-manifest-192x192.png",
@@ -25,7 +25,10 @@
   "display": "standalone",
   "start_url": "/",
   "scope": "/",
-  "categories": ["utilities", "productivity"],
+  "categories": [
+    "utilities",
+    "productivity"
+  ],
   "orientation": "any",
   "lang": "en",
   "dir": "ltr",
@@ -33,7 +36,7 @@
     {
       "name": "Import Chat",
       "short_name": "Import",
-      "description": "Import a WhatsApp chat export",
+      "description": "Import a WhatsApp chat export ZIP",
       "url": "/",
       "icons": [
         {

@@ -1,5 +1,5 @@
 /**
- * Update checker service for WhatsApp Backup Reader
+ * Update checker service for Chat Backup Browser
  *
  * Checks GitHub releases API for new versions and manages user preferences
  * for update notifications (ignore specific version, never ask again).
@@ -13,8 +13,9 @@ const STORAGE_KEY_IGNORED_VERSION = 'update_ignored_version';
 
 // GitHub API endpoint for latest release
 const RELEASES_API_URL =
-	'https://api.github.com/repos/rodrigogs/whats-reader/releases/latest';
-const RELEASES_PAGE_URL = 'https://github.com/rodrigogs/whats-reader/releases';
+	'https://api.github.com/repos/vanshwason/chat-backup-browser/releases/latest';
+const RELEASES_PAGE_URL =
+	'https://github.com/vanshwason/chat-backup-browser/releases';
 
 // Current app version (injected at build time)
 export const currentVersion = `v${__APP_VERSION__}`;

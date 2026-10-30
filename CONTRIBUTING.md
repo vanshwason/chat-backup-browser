@@ -1,6 +1,6 @@
-# Contributing to WhatsApp Backup Reader
+# Contributing to Chat Backup Browser
 
-Thank you for your interest in contributing to WhatsApp Backup Reader! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to Chat Backup Browser! This document provides guidelines and information for contributors.
 
 ## 🌿 Branch Strategy
 
@@ -89,8 +89,8 @@ git commit -m "chore(deps): update electron to v39"
 
 ```bash
 # Clone the repository
-git clone https://github.com/rodrigogs/whats-reader.git
-cd whats-reader
+git clone https://github.com/vanshwason/chat-backup-browser.git
+cd chat-backup-browser
 
 # Install dependencies
 npm install
@@ -157,7 +157,7 @@ Feature requests are welcome! Please:
 
 ## 📄 License
 
-By contributing to WhatsApp Backup Reader, you agree that your contributions will be licensed under the [AGPL-3.0 License](LICENSE).
+By contributing to Chat Backup Browser, you agree that your contributions will be licensed under the [AGPL-3.0 License](LICENSE).
 
 ## 🙏 Thank You!
 

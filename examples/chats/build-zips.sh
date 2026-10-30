@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build ZIP files from example chat folders
-# These ZIPs can be used for testing the WhatsApp Backup Reader app
+# These ZIPs can be used for testing Chat Backup Browser
 
 set -e
 
@@ -64,7 +64,7 @@ fi
 echo ""
 echo "Done! ZIP files are ready for testing."
 echo ""
-echo "To test, drag and drop the ZIP files into the WhatsApp Backup Reader app."
+echo "To test, drag and drop the ZIP files into Chat Backup Browser."
 echo ""
 echo "Formats:"
 echo "  - Android: DD/MM/YY, HH:MM - format"

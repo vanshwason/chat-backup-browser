@@ -1,6 +1,6 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "app_title": "Читалка резервных копий WhatsApp",
+  "app_title": "Chat Backup Browser",
   "app_subtitle": "Просматривайте и анализируйте экспорты чатов WhatsApp",
   "theme_switch_to_light": "Переключиться на светлую тему",
   "theme_switch_to_dark": "Переключиться на тёмную тему",

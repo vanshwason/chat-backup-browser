@@ -21,7 +21,7 @@ module.exports = async function (context) {
 	let nodeModulesPath;
 	
 	if (platform === 'darwin') {
-		// macOS: WhatsApp Backup Reader.app/Contents/Resources/app.asar.unpacked/node_modules
+		// macOS: Chat Backup Browser.app/Contents/Resources/app.asar.unpacked/node_modules
 		nodeModulesPath = path.join(
 			appOutDir,
 			`${context.packager.appInfo.productFilename}.app`,

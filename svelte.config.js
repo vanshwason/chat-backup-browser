@@ -17,7 +17,7 @@ const config = {
 			strict: true,
 		}),
 		paths: {
-			base: isGitHubPages ? '/whats-reader' : '',
+			base: isGitHubPages ? '/chat-backup-browser' : '',
 			relative: !isGitHubPages,
 		},
 	},

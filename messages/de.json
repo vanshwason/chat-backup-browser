@@ -1,6 +1,6 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "app_title": "WhatsApp Backup Reader",
+  "app_title": "Chat Backup Browser",
   "app_subtitle": "Zeigen und analysieren Sie Ihre WhatsApp-Chat-Exporte an",
   "theme_switch_to_light": "Zum hellen Modus wechseln",
   "theme_switch_to_dark": "Zum dunklen Modus wechseln",

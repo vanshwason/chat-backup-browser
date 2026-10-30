@@ -1,6 +1,6 @@
 # Release Process Documentation
 
-This document describes the complete automated release workflow for WhatsApp Backup Reader, including architecture, best practices, and troubleshooting.
+This document describes the complete automated release workflow for Chat Backup Browser, including architecture, best practices, and troubleshooting.
 
 ## 📋 Overview
 
@@ -556,8 +556,8 @@ Electron Builder settings in `package.json`:
 ```json
 {
   "build": {
-    "appId": "com.whatsapp.backup.reader",
-    "productName": "WhatsApp Backup Reader",
+    "appId": "io.github.vanshwason.chatbackupbrowser",
+    "productName": "Chat Backup Browser",
     "directories": {
       "output": "dist-electron"
     },

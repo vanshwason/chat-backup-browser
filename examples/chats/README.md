@@ -1,6 +1,6 @@
 # WhatsApp Chat Examples
 
-This directory contains example WhatsApp chat exports for testing the WhatsApp Backup Reader application. Both Android and iOS formats are provided.
+This directory contains example WhatsApp chat exports for testing Chat Backup Browser. Both Android and iOS formats are provided.
 
 ## Directory Structure
 
@@ -53,7 +53,7 @@ This will create:
 ## Testing with the App
 
 1. Build the ZIP files using the script above
-2. Open the WhatsApp Backup Reader app (web or desktop)
+2. Open Chat Backup Browser (web or desktop)
 3. Drag and drop any of the ZIP files into the app
 4. The chat should load and display correctly
 

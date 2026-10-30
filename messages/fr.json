@@ -1,6 +1,6 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "app_title": "Lecteur de Sauvegarde WhatsApp",
+  "app_title": "Chat Backup Browser",
   "app_subtitle": "Visualisez et analysez vos exportations de chat WhatsApp",
   "theme_switch_to_light": "Passer en mode clair",
   "theme_switch_to_dark": "Passer en mode sombre",

@@ -13,6 +13,32 @@ const fs = require('node:fs');
 
 let mainWindow;
 
+// One-time migration from the app's previous name. Saved chats, bookmarks and
+// settings live in the user-data folder, which is named after the product.
+// Copy the storage folders over before Chromium opens them.
+const LEGACY_USER_DATA = path.join(
+	app.getPath('appData'),
+	'WhatsApp Backup Reader',
+);
+const STORAGE_DIRS = ['IndexedDB', 'Local Storage'];
+try {
+	const userData = app.getPath('userData');
+	if (
+		userData !== LEGACY_USER_DATA &&
+		fs.existsSync(LEGACY_USER_DATA) &&
+		!STORAGE_DIRS.some((dir) => fs.existsSync(path.join(userData, dir)))
+	) {
+		for (const dir of STORAGE_DIRS) {
+			const from = path.join(LEGACY_USER_DATA, dir);
+			if (fs.existsSync(from)) {
+				fs.cpSync(from, path.join(userData, dir), { recursive: true });
+			}
+		}
+	}
+} catch (err) {
+	console.error('[Migration] Could not copy previous app data:', err);
+}
+
 // Configure auto-updater
 autoUpdater.autoDownload = false; // Manual download control
 autoUpdater.autoInstallOnAppQuit = true; // Install when app quits
@@ -166,7 +192,7 @@ ipcMain.handle('dialog:openFile', async () => {
 	const result = await dialog.showOpenDialog(mainWindow, {
 		properties: ['openFile'],
 		filters: [
-			{ name: 'WhatsApp Exports', extensions: ['zip'] },
+			{ name: 'WhatsApp chat exports', extensions: ['zip'] },
 			{ name: 'All Files', extensions: ['*'] },
 		],
 	});
@@ -284,7 +310,7 @@ ipcMain.handle('file:readFromPath', async (_event, filePath) => {
 
 ipcMain.handle('shell:openExternal', async (_event, url) => {
 	// Validate URL before opening
-	if (!url.startsWith('https://github.com/rodrigogs/whats-reader')) {
+	if (!url.startsWith('https://github.com/vanshwason/chat-backup-browser')) {
 		throw new Error('Invalid URL');
 	}
 	await shell.openExternal(url);

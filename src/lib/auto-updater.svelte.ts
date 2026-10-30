@@ -170,7 +170,7 @@ export function ignoreVersion(version: string): void {
  * Get releases page URL
  */
 export function getReleasesPageUrl() {
-	return 'https://github.com/rodrigogs/whats-reader/releases';
+	return 'https://github.com/vanshwason/chat-backup-browser/releases';
 }
 
 /**

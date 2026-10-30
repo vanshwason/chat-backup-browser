@@ -216,7 +216,7 @@ async function downloadSelected(): Promise<void> {
 		const date = new Date().toISOString().split('T')[0];
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = `whats-reader-media-${chatTitle}-${date}.zip`;
+		a.download = `chat-backup-browser-media-${chatTitle}-${date}.zip`;
 		document.body.appendChild(a);
 		a.click();
 		document.body.removeChild(a);

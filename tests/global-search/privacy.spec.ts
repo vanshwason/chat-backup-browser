@@ -7,7 +7,7 @@ test('GH-67 privacy harness blocks network APIs and synthetic data leaks', async
 		navigate: () => page.goto('/').then(() => undefined),
 		assertIdentity: () =>
 			expect(
-				page.getByRole('heading', { name: 'WhatsApp Backup Reader', level: 1 }),
+				page.getByRole('heading', { name: 'Chat Backup Browser', level: 1 }),
 			).toBeVisible(),
 		createPrivacyGuards: () =>
 			installGlobalSearchPrivacyGuards(page, {
