@@ -1,3 +1,4 @@
+# Builds desktop installers. Started by the Release workflow, or by hand with a version.
 name: Build
 
 on:
