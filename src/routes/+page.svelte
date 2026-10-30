@@ -138,6 +138,22 @@ let showSidebar = $state(true);
 let sidebarFileInput: HTMLInputElement | undefined = $state();
 let showBookmarks = $state(false);
 let showMediaGallery = $state(false);
+// The gallery is only mounted while open (plus its 300ms close animation):
+// a hidden gallery for a big chat holds thousands of thumbnails and makes
+// every scroll of the chat crawl.
+let galleryMounted = $state(false);
+$effect(() => {
+	if (showMediaGallery) {
+		galleryMounted = true;
+		return;
+	}
+	const timer = setTimeout(() => (galleryMounted = false), 300);
+	return () => clearTimeout(timer);
+});
+// Reset gallery selection/filters on chat change even while it is unmounted
+$effect(() => {
+	galleryState.syncToChatTitle(appState.selectedChat?.title ?? null);
+});
 let showParticipants = $state(false);
 let participantStats = $state<Map<string, number> | null>(null);
 let scrollToMessageId = $state<string | null>(null);
@@ -1620,9 +1636,11 @@ function handleGlobalSearchReselectSource(_archiveId: string) {
 					class:electron-mac={isElectronMac}
 				>
 					<div class="flex-1 overflow-hidden">
-						<MediaGallery
-							onClose={() => (showMediaGallery = false)}
-						/>
+						{#if galleryMounted}
+							<MediaGallery
+								onClose={() => (showMediaGallery = false)}
+							/>
+						{/if}
 					</div>
 				</div>
 

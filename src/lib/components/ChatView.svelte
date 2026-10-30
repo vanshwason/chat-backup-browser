@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onDestroy, onMount, tick } from 'svelte';
+import { onDestroy, tick, untrack } from 'svelte';
 import { bookmarksState } from '$lib/bookmarks.svelte';
 import { getNextMessageIndex } from '$lib/helpers/message-list-navigation';
 import * as m from '$lib/paraglide/messages';
@@ -7,6 +7,7 @@ import { getLocale } from '$lib/paraglide/runtime';
 import type { ChatMessage } from '$lib/parser';
 import { groupMessagesByDate } from '$lib/parser';
 import type { FlatItem } from '$lib/parser/zip-parser';
+import Icon from './Icon.svelte';
 import MessageBubble from './MessageBubble.svelte';
 
 // Get current locale for date formatting
@@ -68,9 +69,13 @@ let {
 	smoothNavigation = false,
 }: Props = $props();
 
-// Performance optimization: chunk messages for progressive rendering
-const CHUNK_SIZE = 100; // Render 100 messages at a time
-const INITIAL_CHUNKS = 2; // Start with 2 chunks (200 messages from bottom)
+// Performance optimization: only a window of the flat item list is in the DOM.
+// Scrolling near either edge slides the window; jumps re-center it on the
+// target. Capping the window keeps huge chats as smooth as small ones.
+const WINDOW_INITIAL = 200; // Items rendered when a chat opens (from the bottom)
+const WINDOW_STEP = 200; // Items added when scrolling near an edge
+const WINDOW_MAX = 600; // Items kept in the DOM at most
+const JUMP_CONTEXT = 150; // Items rendered on each side of a jump target
 
 // Flatten messages with date separators for virtualization
 type RenderItem =
@@ -127,9 +132,7 @@ const totalFlatItemsCount = $derived.by(() => {
 	if (precomputedFlatItems && precomputedFlatItems.length > 0) {
 		return precomputedFlatItems.length;
 	}
-	// Fallback: estimate based on messages (each message + ~1 date separator per day)
-	// This is an approximation but close enough for chunk calculations
-	return messages.length + Math.ceil(messages.length / 50); // rough estimate
+	return fallbackFlatItems?.length ?? 0;
 });
 
 // Get the message index map
@@ -165,19 +168,30 @@ const fallbackFlatItems = $derived.by(() => {
 	return items;
 });
 
-// Track loaded chunks (from bottom since we start at bottom)
-let loadedChunksFromEnd = $state(INITIAL_CHUNKS);
+// Rendered window [start, end) over the flat items. null means "anchored to
+// the latest messages", so the window follows the list when it changes.
+let windowStartState = $state<number | null>(null);
+let windowEndState = $state<number | null>(null);
 
-// Calculate which items to render (from end of list)
+const windowEnd = $derived(
+	Math.min(windowEndState ?? totalFlatItemsCount, totalFlatItemsCount),
+);
+const windowStart = $derived(
+	Math.max(
+		0,
+		Math.min(windowStartState ?? windowEnd - WINDOW_INITIAL, windowEnd),
+	),
+);
+
+// Calculate which items to render
 // This only resolves the items we actually need to display
 const renderedItems = $derived.by(() => {
-	const totalItems = totalFlatItemsCount;
-	const itemsToRender = Math.min(totalItems, loadedChunksFromEnd * CHUNK_SIZE);
-	const startIdx = Math.max(0, totalItems - itemsToRender);
+	const startIdx = windowStart;
+	const endIdx = windowEnd;
 
 	// If we have precomputed data, only resolve the slice we need
 	if (precomputedFlatItems && precomputedFlatItems.length > 0) {
-		const slice = precomputedFlatItems.slice(startIdx);
+		const slice = precomputedFlatItems.slice(startIdx, endIdx);
 		const items: RenderItem[] = [];
 		let skippedCount = 0;
 		const skippedIds: string[] = [];
@@ -212,15 +226,17 @@ const renderedItems = $derived.by(() => {
 			items,
 			startIndex: startIdx,
 			hasMore: startIdx > 0,
+			hasNewer: endIdx < totalFlatItemsCount,
 		};
 	}
 
 	// Fallback: use computed flat items
 	const fallback = fallbackFlatItems ?? [];
 	return {
-		items: fallback.slice(startIdx),
+		items: fallback.slice(startIdx, endIdx),
 		startIndex: startIdx,
 		hasMore: startIdx > 0,
+		hasNewer: endIdx < totalFlatItemsCount,
 	};
 });
 
@@ -254,63 +270,135 @@ let pendingHighlightId = $state<string | null>(null);
 // Persistent highlight - stays until user scrolls or navigates elsewhere
 let persistentHighlightId = $state<string | null>(null);
 
-// Load more messages when scrolling to top
-let topSentinel: HTMLElement;
-let observer: IntersectionObserver | null = null;
+// Slide the window when scrolling near the top or bottom edge
+let topSentinel = $state<HTMLElement | null>(null);
+let bottomSentinel = $state<HTMLElement | null>(null);
 
-function setupIntersectionObserver() {
+$effect(() => {
 	if (typeof IntersectionObserver === 'undefined' || !chatContainer) return;
+	// Re-observe whenever the window moves: a new observer reports right away
+	// if a sentinel is still in range, so fast scrolling keeps loading.
+	void windowStart;
+	void windowEnd;
+	void isLoadingMore;
 
-	observer = new IntersectionObserver(
+	const observer = new IntersectionObserver(
 		(entries) => {
 			for (const entry of entries) {
-				if (entry.isIntersecting && renderedItems.hasMore && !isLoadingMore) {
-					loadMoreMessages();
-				}
+				if (!entry.isIntersecting) continue;
+				if (entry.target === topSentinel) loadOlderMessages();
+				else if (entry.target === bottomSentinel) loadNewerMessages();
 			}
 		},
 		{
 			root: chatContainer,
-			rootMargin: '500px 0px 0px 0px', // Trigger 500px before reaching top
+			rootMargin: '500px 0px', // Trigger 500px before reaching an edge
 			threshold: 0,
 		},
 	);
+	if (topSentinel) observer.observe(topSentinel);
+	if (bottomSentinel) observer.observe(bottomSentinel);
+	return () => observer.disconnect();
+});
 
-	if (topSentinel) {
-		observer.observe(topSentinel);
-	}
-}
-
-function loadMoreMessages() {
-	if (isLoadingMore || !renderedItems.hasMore || !chatContainer) return;
-
+/**
+ * Changes the window while keeping the first visible message at the same spot
+ * on screen, so items added or dropped above it don't make the view jump.
+ */
+async function moveWindowKeepingAnchor(start: number, end: number) {
+	if (!chatContainer || isLoadingMore) return;
 	isLoadingMore = true;
 
-	// Save current scroll position relative to bottom
-	const scrollBottom = chatContainer.scrollHeight - chatContainer.scrollTop;
-
-	// Load more chunks
-	loadedChunksFromEnd = Math.min(
-		loadedChunksFromEnd + 2, // Load 2 more chunks
-		Math.ceil(totalFlatItemsCount / CHUNK_SIZE),
-	);
-
-	// After DOM updates, restore scroll position
-	requestAnimationFrame(() => {
-		if (chatContainer) {
-			chatContainer.scrollTop = chatContainer.scrollHeight - scrollBottom;
+	const containerTop = chatContainer.getBoundingClientRect().top;
+	let anchorId: string | null = null;
+	let anchorOffset = 0;
+	for (const item of renderedItems.items) {
+		if (item.type !== 'message') continue;
+		const el = messageRefs.get(item.message.id);
+		if (!el) continue;
+		const rect = el.getBoundingClientRect();
+		if (rect.bottom > containerTop) {
+			anchorId = item.message.id;
+			anchorOffset = rect.top - containerTop;
+			break;
 		}
-		isLoadingMore = false;
-	});
+	}
+
+	windowStartState = start;
+	windowEndState = end >= totalFlatItemsCount ? null : end;
+	await tick();
+
+	const anchor = anchorId ? messageRefs.get(anchorId) : undefined;
+	if (anchor && chatContainer) {
+		const newOffset =
+			anchor.getBoundingClientRect().top -
+			chatContainer.getBoundingClientRect().top;
+		chatContainer.scrollTop += newOffset - anchorOffset;
+	}
+	isLoadingMore = false;
+}
+
+function loadOlderMessages() {
+	if (!renderedItems.hasMore) return;
+	const start = Math.max(0, windowStart - WINDOW_STEP);
+	const end = Math.min(windowEnd, start + WINDOW_MAX);
+	void moveWindowKeepingAnchor(start, end);
+}
+
+function loadNewerMessages() {
+	if (!renderedItems.hasNewer) return;
+	const end = Math.min(totalFlatItemsCount, windowEnd + WINDOW_STEP);
+	const start = Math.max(windowStart, end - WINDOW_MAX);
+	void moveWindowKeepingAnchor(start, end);
+}
+
+/** Re-centers the window on a flat item index if it isn't rendered yet. */
+function ensureIndexRendered(index: number): boolean {
+	if (index >= windowStart && index < windowEnd) return false;
+	const start = Math.max(0, index - JUMP_CONTEXT);
+	const end = Math.min(totalFlatItemsCount, index + JUMP_CONTEXT);
+	windowStartState = start;
+	windowEndState = end >= totalFlatItemsCount ? null : end;
+	return true;
+}
+
+/** Shows the latest messages again (the window may have moved away). */
+async function jumpToLatest() {
+	windowStartState = null;
+	windowEndState = null;
+	await tick();
+	scrollToBottomSettled();
+}
+
+/**
+ * Scrolls to the bottom, then again once stickers/thumbnails near the bottom
+ * have sized themselves, unless the user has scrolled up in the meantime.
+ */
+function scrollToBottomSettled() {
+	if (!chatContainer) return;
+	chatContainer.scrollTop = chatContainer.scrollHeight;
+	for (const delay of [150, 600]) {
+		setTimeout(() => {
+			if (!chatContainer || renderedItems.hasNewer) return;
+			const gap =
+				chatContainer.scrollHeight -
+				chatContainer.scrollTop -
+				chatContainer.clientHeight;
+			if (gap > 0 && gap < chatContainer.clientHeight) {
+				chatContainer.scrollTop = chatContainer.scrollHeight;
+			}
+		}, delay);
+	}
 }
 
 // Track previous archiveId to detect actual changes
 let previousArchiveId = $state<string | null>(null);
 
-// Reset chunks when chat changes
+// Reset the window when chat changes
 $effect(() => {
 	if (previousArchiveId !== null && previousArchiveId !== archiveId) {
-		loadedChunksFromEnd = INITIAL_CHUNKS;
+		windowStartState = null;
+		windowEndState = null;
 		hasScrolledToBottom = false;
 		focusedMessageId = null; // Reset keyboard navigation on chat switch (GH-79)
 		// DON'T clear messageRefs here - let the destroy() callbacks handle cleanup
@@ -325,21 +413,15 @@ $effect(() => {
 	if (messages.length > 0 && chatContainer && !hasScrolledToBottom) {
 		requestAnimationFrame(() => {
 			if (chatContainer) {
-				chatContainer.scrollTop = chatContainer.scrollHeight;
+				scrollToBottomSettled();
 				hasScrolledToBottom = true;
 			}
 		});
 	}
 });
 
-// Setup intersection observer after mount
-onMount(() => {
-	setupIntersectionObserver();
-});
-
 // Cleanup on destroy
 onDestroy(() => {
-	observer?.disconnect();
 	if (scrollTimeout) {
 		clearTimeout(scrollTimeout);
 	}
@@ -349,17 +431,9 @@ onDestroy(() => {
 $effect(() => {
 	if (currentSearchResultId) {
 		// Capture current values to ensure deriveds are evaluated
-		const currentIndexMap = messageIndexMap;
-		const currentFlatItemsLength = totalFlatItemsCount;
-		const messageIndex = currentIndexMap.get(currentSearchResultId);
-
+		const messageIndex = messageIndexMap.get(currentSearchResultId);
 		if (messageIndex !== undefined) {
-			const itemsFromEnd = currentFlatItemsLength - messageIndex;
-			const chunksNeeded = Math.ceil(itemsFromEnd / CHUNK_SIZE);
-
-			if (chunksNeeded > loadedChunksFromEnd) {
-				loadedChunksFromEnd = chunksNeeded + 1;
-			}
+			untrack(() => ensureIndexRendered(messageIndex));
 		}
 	}
 });
@@ -371,75 +445,71 @@ $effect(() => {
 
 	// Capture current values to ensure deriveds are evaluated
 	const currentIndexMap = messageIndexMap;
-	const currentFlatItemsLength = totalFlatItemsCount;
 
-	// Run async navigation with retry mechanism
-	(async () => {
-		const maxRetries = 20; // 20 * 50ms = 1 second max
-		const retryDelay = 50;
+	// Run async navigation with retry mechanism. Untracked: moving the window
+	// must not re-run this effect, or scrolling would snap back to the result.
+	untrack(() =>
+		(async () => {
+			const maxRetries = 20; // 20 * 50ms = 1 second max
+			const retryDelay = 50;
 
-		// Capture targetId at the start to detect if it changes during retries
-		const capturedTargetId = targetId;
+			// Capture targetId at the start to detect if it changes during retries
+			const capturedTargetId = targetId;
 
-		for (let attempt = 0; attempt < maxRetries; attempt++) {
-			// Check if currentSearchResultId changed during retry loop (race condition)
-			if (currentSearchResultId !== capturedTargetId) {
-				return; // Exit early, a newer navigation is in progress
-			}
+			for (let attempt = 0; attempt < maxRetries; attempt++) {
+				// Check if currentSearchResultId changed during retry loop (race condition)
+				if (currentSearchResultId !== capturedTargetId) {
+					return; // Exit early, a newer navigation is in progress
+				}
 
-			// Check if we need to expand chunks
-			const messageIndex = currentIndexMap.get(capturedTargetId);
+				// Move the window to the target if it isn't rendered
+				const messageIndex = currentIndexMap.get(capturedTargetId);
 
-			if (messageIndex !== undefined) {
-				const itemsFromEnd = currentFlatItemsLength - messageIndex;
-				const chunksNeeded = Math.ceil(itemsFromEnd / CHUNK_SIZE);
-
-				if (chunksNeeded > loadedChunksFromEnd) {
-					loadedChunksFromEnd = chunksNeeded + 1;
+				if (messageIndex !== undefined && ensureIndexRendered(messageIndex)) {
 					// Check again before async operation
 					if (currentSearchResultId !== capturedTargetId) {
 						return;
 					}
-					await tick(); // Wait for DOM update after chunk expansion
+					await tick(); // Wait for DOM update after the window moved
 				}
-			}
 
-			// Check if message ref exists in DOM
-			if (messageRefs.has(capturedTargetId)) {
-				const element = messageRefs.get(capturedTargetId);
+				// Check if message ref exists in DOM
+				if (messageRefs.has(capturedTargetId)) {
+					const element = messageRefs.get(capturedTargetId);
 
-				if (element) {
-					highlightReady = false;
-					highlightedId = null;
-					pendingHighlightId = capturedTargetId;
-					isNavigationScroll = true;
+					if (element) {
+						highlightReady = false;
+						highlightedId = null;
+						pendingHighlightId = capturedTargetId;
+						isNavigationScroll = true;
 
-					element.scrollIntoView({
-						behavior: smoothNavigation ? 'smooth' : 'auto',
-						block: 'center',
-					});
-					if (!smoothNavigation) setTimeout(handleScrollEnd, 50);
+						element.scrollIntoView({
+							behavior: smoothNavigation ? 'smooth' : 'auto',
+							block: 'center',
+						});
+						if (!smoothNavigation) setTimeout(handleScrollEnd, 50);
 
-					// Check again before async operation
-					if (currentSearchResultId !== capturedTargetId) {
-						return;
+						// Check again before async operation
+						if (currentSearchResultId !== capturedTargetId) {
+							return;
+						}
+
+						setTimeout(() => {
+							isNavigationScroll = false;
+						}, 500);
+
+						return; // Success, exit retry loop
 					}
-
-					setTimeout(() => {
-						isNavigationScroll = false;
-					}, 500);
-
-					return; // Success, exit retry loop
 				}
-			}
 
-			// Ref not ready yet, check again before waiting
-			if (currentSearchResultId !== capturedTargetId) {
-				return;
+				// Ref not ready yet, check again before waiting
+				if (currentSearchResultId !== capturedTargetId) {
+					return;
+				}
+				await new Promise((resolve) => setTimeout(resolve, retryDelay));
 			}
-			await new Promise((resolve) => setTimeout(resolve, retryDelay));
-		}
-	})();
+		})(),
+	);
 });
 
 // Track last processed scroll to avoid duplicate processing
@@ -473,13 +543,9 @@ async function scrollToMessageWithRetry(targetId: string): Promise<boolean> {
 			return false;
 		}
 
-		// 2. Ensure enough chunks are loaded to include the target message
-		const itemsFromEnd = totalFlatItemsCount - messageIndex;
-		const chunksNeeded = Math.ceil(itemsFromEnd / CHUNK_SIZE);
-
-		if (chunksNeeded > loadedChunksFromEnd) {
-			loadedChunksFromEnd = chunksNeeded + 1;
-			await tick(); // Wait for DOM update after chunk expansion
+		// 2. Move the window to the target message if it isn't rendered
+		if (ensureIndexRendered(messageIndex)) {
+			await tick(); // Wait for DOM update after the window moved
 		}
 
 		// 3. Check if message ref exists in DOM
@@ -547,7 +613,7 @@ $effect(() => {
 	console.log('[Scroll Effect] Starting scroll to:', targetId);
 
 	// Fire and forget - the retry mechanism handles all timing
-	scrollToMessageWithRetry(targetId);
+	untrack(() => scrollToMessageWithRetry(targetId));
 });
 
 // Handle scroll end to trigger highlight
@@ -653,6 +719,7 @@ function handleScroll() {
 }
 </script>
 
+<div class="relative flex-1 min-h-0 flex flex-col">
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
 	bind:this={chatContainer}
@@ -729,9 +796,35 @@ function handleScroll() {
 		{/if}
 	{/each}
 
+	{#if renderedItems.hasNewer}
+		<div class="flex justify-center py-4">
+			<div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+				{#if isLoadingMore}
+					<div class="w-4 h-4 border-2 border-gray-300 border-t-[var(--color-whatsapp-teal)] rounded-full animate-spin"></div>
+				{/if}
+				{m.messages_loading_newer()}
+			</div>
+		</div>
+		<!-- Bottom sentinel for loading newer messages -->
+		<div bind:this={bottomSentinel} class="h-1" aria-hidden="true"></div>
+	{/if}
+
 	{#if messages.length === 0}
 		<div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
 			<p>{m.messages_no_display()}</p>
 		</div>
 	{/if}
+</div>
+
+{#if renderedItems.hasNewer}
+	<button
+		type="button"
+		class="chat-jump-latest absolute bottom-4 right-4 w-10 h-10 rounded-full bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 shadow-lg flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-700"
+		onclick={jumpToLatest}
+		aria-label={m.messages_jump_to_latest()}
+		title={m.messages_jump_to_latest()}
+	>
+		<Icon name="chevron-down" size="md" />
+	</button>
+{/if}
 </div>

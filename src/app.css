@@ -538,6 +538,10 @@ body {
 .mobile-wa .bookmark-btn:not(.bookmarked) {
 	display: none;
 }
+.mobile-wa .chat-jump-latest {
+	bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
 .mobile-wa .wa-time-full {
 	display: none;
 }

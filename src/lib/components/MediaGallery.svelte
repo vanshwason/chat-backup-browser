@@ -87,12 +87,69 @@ const filteredMediaParticipants = $derived.by(() => {
 const filterParticipantsSet = $derived(new Set(filterParticipants));
 const filterTypesSet = $derived(new Set(filterTypes));
 
+// Progressive rendering: big chats have thousands of media items, and mounting
+// them all at once freezes the page. Render whole date sections until the
+// budget is reached, and raise the budget as the bottom sentinel comes close.
+const ITEM_BATCH = 120;
+let itemBudget = $state(ITEM_BATCH);
+let bottomSentinel = $state<HTMLElement | null>(null);
+
+/** Number of leading date sections needed to show `budget` items. */
+function sectionsForBudget(budget: number): number {
+	let shown = 0;
+	let sections = 0;
+	for (const key of itemsByDate.sortedKeys) {
+		if (shown >= budget) break;
+		shown += itemsByDate.map.get(key)?.length ?? 0;
+		sections++;
+	}
+	return sections;
+}
+
+const visibleDateKeys = $derived(
+	itemsByDate.sortedKeys.slice(0, sectionsForBudget(itemBudget)),
+);
+const hasMoreSections = $derived(
+	visibleDateKeys.length < itemsByDate.sortedKeys.length,
+);
+
+// Start small again when the chat or filters change the item list
+$effect(() => {
+	void itemsByDate;
+	itemBudget = ITEM_BATCH;
+});
+
+$effect(() => {
+	if (!bottomSentinel || !scrollContainerRef) return;
+	// Re-observe after each batch: a new observer reports right away if the
+	// sentinel is still in range (the batch did not fill the panel).
+	void itemBudget;
+	const observer = new IntersectionObserver(
+		(entries) => {
+			if (entries.some((e) => e.isIntersecting)) itemBudget += ITEM_BATCH;
+		},
+		{ root: scrollContainerRef, rootMargin: '0px 0px 600px 0px' },
+	);
+	observer.observe(bottomSentinel);
+	return () => observer.disconnect();
+});
+
 // Handle scroll-to-date
 $effect(() => {
 	const dateKey = scrollToDateKey;
 	if (!dateKey || !scrollContainerRef) return;
 
 	let isCancelled = false;
+
+	// Make sure the target section is rendered before scrolling to it
+	const targetIndex = itemsByDate.sortedKeys.indexOf(dateKey);
+	if (targetIndex >= visibleDateKeys.length) {
+		let needed = 0;
+		for (const key of itemsByDate.sortedKeys.slice(0, targetIndex + 1)) {
+			needed += itemsByDate.map.get(key)?.length ?? 0;
+		}
+		itemBudget = needed + ITEM_BATCH;
+	}
 
 	tick().then(() => {
 		if (isCancelled) return;
@@ -461,7 +518,7 @@ onDestroy(() => {
 			</div>
 		{:else}
 			<!-- Date-grouped sections -->
-			{#each itemsByDate.sortedKeys as dateKey (dateKey)}
+			{#each visibleDateKeys as dateKey (dateKey)}
 				{@const dateItems = itemsByDate.map.get(dateKey) ?? []}
 				<section data-date={dateKey} class="mb-4">
 					<!-- Sticky date header -->
@@ -485,6 +542,9 @@ onDestroy(() => {
 					</div>
 				</section>
 			{/each}
+			{#if hasMoreSections}
+				<div bind:this={bottomSentinel} class="h-px" aria-hidden="true"></div>
+			{/if}
 		{/if}
 	</div>
 
