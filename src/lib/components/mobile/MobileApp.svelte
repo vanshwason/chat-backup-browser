@@ -58,6 +58,7 @@ let showGallery = $state(false);
 let showBookmarks = $state(false);
 let showStats = $state(false);
 let showPerspectivePicker = $state(false);
+let showViewAsPrompt = $state(false);
 let isSearching = $state(false);
 let listQuery = $state('');
 let fileInput = $state<HTMLInputElement | null>(null);
@@ -80,7 +81,44 @@ const likelyMe = $derived.by(() => {
 	);
 	return common.length === 1 ? common[0] : null;
 });
-const autoPerspectiveApplied = new Set<string>();
+// "View as" choices per chat, remembered on this phone. Chats served by the
+// laptop aren't persisted like imported ones, so without this the choice
+// would be lost on every reload. A stored null means "None" was picked.
+const VIEW_AS_KEY = 'wa-mobile-view-as';
+
+function loadViewAsChoices(): Record<string, string | null> {
+	try {
+		return JSON.parse(localStorage.getItem(VIEW_AS_KEY) ?? '{}');
+	} catch {
+		return {};
+	}
+}
+
+function saveViewAsChoice(archiveId: string, participant: string | null) {
+	try {
+		const choices = loadViewAsChoices();
+		choices[archiveId] = participant;
+		localStorage.setItem(VIEW_AS_KEY, JSON.stringify(choices));
+	} catch {
+		// Storage unavailable (private mode): the choice lasts this visit only
+	}
+}
+
+/** Sets who "I" am in the open chat and remembers it for next time. */
+function choosePerspective(participant: string | null) {
+	if (openChat) saveViewAsChoice(openChat.archiveId, participant);
+	onSelectPerspective(participant);
+	showViewAsPrompt = false;
+}
+
+// Participants for the first-open prompt: the likely exporter first
+const viewAsOptions = $derived.by(() => {
+	if (!openChat) return [];
+	const list = [...openChat.participants];
+	const me = likelyMe ? list.indexOf(likelyMe) : -1;
+	if (me > 0) list.unshift(...list.splice(me, 1));
+	return list;
+});
 
 // ── Chat list ──────────────────────────────────────────────────────────────
 function lastMessage(chat: ChatData): ChatMessage | undefined {
@@ -205,15 +243,21 @@ async function openChatScreen(chat: ChatData) {
 	}
 
 	await tick();
-	if (
-		currentPerspective === null &&
-		likelyMe &&
-		chat.participants.includes(likelyMe) &&
-		!autoPerspectiveApplied.has(chat.archiveId)
-	) {
-		autoPerspectiveApplied.add(chat.archiveId);
-		onSelectPerspective(likelyMe);
+	// Restore the remembered "view as" choice, or ask on the first open
+	const choices = loadViewAsChoices();
+	if (chat.archiveId in choices) {
+		const saved = choices[chat.archiveId];
+		if (saved === null || chat.participants.includes(saved)) {
+			if (saved !== currentPerspective) onSelectPerspective(saved);
+			return;
+		}
 	}
+	if (currentPerspective !== null) {
+		// Restored from an imported chat's saved settings
+		saveViewAsChoice(chat.archiveId, currentPerspective);
+		return;
+	}
+	if (chat.participants.length > 0) showViewAsPrompt = true;
 }
 
 function closeOverlays() {
@@ -222,6 +266,7 @@ function closeOverlays() {
 	showBookmarks = false;
 	showStats = false;
 	showPerspectivePicker = false;
+	showViewAsPrompt = false;
 	actionMessage = null;
 }
 
@@ -629,12 +674,12 @@ const bookmarkCount = $derived(
 						<span class="text-gray-500 dark:text-[#8696A0] truncate max-w-[45%]">{currentPerspective ?? m.perspective_none()}</span>
 					</button>
 					{#if showPerspectivePicker}
-						<button type="button" class="wa-cell pl-14" onclick={() => onSelectPerspective(null)}>
+						<button type="button" class="wa-cell pl-14" onclick={() => choosePerspective(null)}>
 							<span class="flex-1 italic">{m.perspective_none()}</span>
 							{#if currentPerspective === null}<Icon name="check" size="sm" class="wa-accent" />{/if}
 						</button>
 						{#each openChat.participants as participant}
-							<button type="button" class="wa-cell pl-14" onclick={() => onSelectPerspective(participant)}>
+							<button type="button" class="wa-cell pl-14" onclick={() => choosePerspective(participant)}>
 								<span class="flex-1 truncate">{participant}</span>
 								{#if currentPerspective === participant}<Icon name="check" size="sm" class="wa-accent" />{/if}
 							</button>
@@ -739,6 +784,54 @@ const bookmarkCount = $derived(
 				</div>
 				<button type="button" class="wa-sheet-btn mt-2 rounded-[14px] bg-white dark:bg-[#233138] font-semibold" onclick={() => (actionMessage = null)}>
 					{m.mobile_cancel()}
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	<!-- ── First-open "view as" prompt ── -->
+	{#if showViewAsPrompt && openChat}
+		<div class="absolute inset-0 z-40 flex flex-col justify-end" role="dialog" aria-modal="true" aria-labelledby="wa-view-as-title">
+			<button
+				type="button"
+				class="absolute inset-0 bg-black/40"
+				aria-label={m.mobile_not_now()}
+				onclick={() => (showViewAsPrompt = false)}
+			></button>
+			<div class="relative px-2 wa-safe-bottom pb-2" transition:fly={{ y: 200, duration: 220 }}>
+				<div class="rounded-[14px] overflow-hidden bg-white/95 dark:bg-[#233138] backdrop-blur-md">
+					<div class="px-4 py-3 text-center border-b border-black/10 dark:border-white/10">
+						<p id="wa-view-as-title" class="text-[15px] font-semibold">{m.mobile_view_as_prompt_title()}</p>
+						<p class="mt-0.5 text-[13px] text-gray-500 dark:text-[#8696A0]">{m.mobile_view_as_prompt_hint()}</p>
+					</div>
+					<div class="max-h-[50vh] overflow-y-auto">
+						{#each viewAsOptions as participant (participant)}
+							<button
+								type="button"
+								class="wa-view-as-row border-b border-black/10 dark:border-white/10"
+								onclick={() => choosePerspective(participant)}
+							>
+								<span
+									class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[13px] font-semibold text-white"
+									style="background-color: {avatarColor(participant)}"
+								>
+									{getInitials(participant)}
+								</span>
+								<span class="flex-1 min-w-0 truncate">
+									{participant}{participant === likelyMe ? ` (${m.mobile_you()})` : ''}
+								</span>
+								<span class="text-[13px] text-gray-500 dark:text-[#8696A0]">
+									{m.mobile_message_count({ count: (messageCounts.get(participant) ?? 0).toLocaleString(locale) })}
+								</span>
+							</button>
+						{/each}
+						<button type="button" class="wa-sheet-btn italic" onclick={() => choosePerspective(null)}>
+							{m.perspective_none()}
+						</button>
+					</div>
+				</div>
+				<button type="button" class="wa-sheet-btn mt-2 rounded-[14px] bg-white dark:bg-[#233138] font-semibold" onclick={() => (showViewAsPrompt = false)}>
+					{m.mobile_not_now()}
 				</button>
 			</div>
 		</div>

@@ -510,6 +510,18 @@ body {
 	border-radius: 7.5px;
 	padding: 6px 8px 8px 9px;
 	box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+.mobile-wa .wa-view-as-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 100%;
+	min-height: 56px;
+	padding: 0 16px;
+	text-align: left;
+	font-size: 17px;
+}
+
+.mobile-wa .wa-view-as-row:active,
 	-webkit-touch-callout: none;
 	-webkit-user-select: none;
 	user-select: none;
