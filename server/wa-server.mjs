@@ -1,5 +1,5 @@
 /**
- * Private chat-library server for WhatsApp Backup Reader.
+ * Private chat-library server for Chat Backup Browser.
  *
  * Serves the built web app (build/) plus the WhatsApp export ZIPs found in a
  * single folder. Each ZIP is extracted once into a cache folder so the phone
@@ -12,7 +12,7 @@
  * Environment overrides:
  *   WA_DIR    folder with the export ZIPs   (default: ~/Documents/WA)
  *   WA_PORT   port to listen on             (default: 8190)
- *   WA_CACHE  extraction cache folder       (default: %LOCALAPPDATA%/WhatsReaderServer/cache)
+ *   WA_CACHE  extraction cache folder       (default: %LOCALAPPDATA%/ChatBackupBrowser/cache)
  */
 
 import { createHash } from 'node:crypto';
@@ -34,7 +34,7 @@ const CACHE_DIR =
 	process.env.WA_CACHE ||
 	path.join(
 		process.env.LOCALAPPDATA || path.join(os.homedir(), '.cache'),
-		'WhatsReaderServer',
+		'ChatBackupBrowser',
 		'cache',
 	);
 
@@ -338,7 +338,7 @@ const server = http.createServer(async (req, res) => {
 
 await fs.mkdir(CACHE_DIR, { recursive: true });
 server.listen(PORT, HOST, async () => {
-	log(`WhatsApp Backup Reader server on http://${HOST}:${PORT}`);
+	log(`Chat Backup Browser server on http://${HOST}:${PORT}`);
 	log(`chats folder: ${WA_DIR}`);
 	log(`cache folder: ${CACHE_DIR}`);
 	await pruneCache();
