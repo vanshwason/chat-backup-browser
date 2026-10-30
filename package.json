@@ -47,6 +47,7 @@
 		"act:setup": "docker pull catthehacker/ubuntu:act-latest && test -f .act/secrets || cp .act/secrets.example .act/secrets",
 		"act:ci": "npm run act:ci:lint && npm run act:ci:typecheck && npm run act:ci:build",
 		"act:ci:lint": ".act/run push -W .github/workflows/ci.yml -e .act/events/push-dev.json -j lint",
+		"test:server": "node scripts/test-phone-server.mjs",
 		"act:ci:typecheck": ".act/run push -W .github/workflows/ci.yml -e .act/events/push-dev.json -j typecheck",
 		"act:ci:build": ".act/run push -W .github/workflows/ci.yml -e .act/events/push-dev.json -j build",
 		"act:release": ".act/run push -W .github/workflows/release.yml --secret-file .act/secrets -e .act/events/push-main.json",
