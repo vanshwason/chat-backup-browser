@@ -279,6 +279,7 @@
   "global_search_status_over_limit": "Search skipped: too many conversations or too much text to search.",
   "global_search_status_error": "Search failed.",
   "global_search_empty_prompt": "Type to search across all chats. Leave the field empty to see what is searchable.",
+  "persistence_file_missing": "Couldn't reopen \"{chatTitle}\": the ZIP was moved or deleted. Open it again to bring it back.",
   "global_search_no_results": "No results.",
   "global_search_results_count": "{total} results",
   "global_search_results_truncated": "Showing the most recent {cap} of {total} matches.",

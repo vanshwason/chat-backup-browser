@@ -443,6 +443,31 @@ async function handleFilesSelected(
 			continue;
 		}
 
+		// Desktop app: a ZIP opened before already has a saved record (with its
+		// bookmarks and settings). Reuse it instead of saving a duplicate.
+		const knownPath = isElectron
+			? paths?.[handleIndex] || getElectronFilePath(file)
+			: undefined;
+		if (knownPath) {
+			const saved = await findPersistedChatByPath(knownPath);
+			if (saved) {
+				handleIndex++;
+				const openIndex = appState.chats.findIndex(
+					(c) => c.archiveId === saved.id,
+				);
+				if (openIndex !== -1) {
+					handleSelectChat(openIndex);
+				} else {
+					persistedChatsToRestore = [
+						...persistedChatsToRestore.filter((c) => c.id !== saved.id),
+						saved,
+					];
+					await handleRestoreChats([saved.id], { silent: true });
+				}
+				continue;
+			}
+		}
+
 		// Create a loading placeholder for this file
 		const loadingId = crypto.randomUUID();
 		const filename = sanitizeFilename(file.name);
@@ -496,6 +521,16 @@ async function handleFilesSelected(
 					filePath: droppedFilePath,
 					fileHandle: droppedHandle,
 				});
+
+				// Desktop app: remember every opened ZIP (only its path is stored)
+				// so it reopens on the next launch without asking
+				if (
+					isElectron &&
+					droppedFilePath &&
+					!pageState.isRemembered(chatData.archiveId)
+				) {
+					void rememberChat(chatData.archiveId, { silent: true });
+				}
 
 				// Start background indexing
 				startIndexWorker(chatData);
@@ -704,6 +739,49 @@ const currentUser = $derived.by(() => {
 	return undefined;
 });
 
+// Desktop app: the chats open in the sidebar are reopened on the next launch
+// without asking. This is the list of their archive ids, in sidebar order;
+// closing a chat drops it from the list (its saved data stays).
+const OPEN_CHATS_KEY = 'desktop-open-chats';
+
+function loadOpenChatIds(): string[] | null {
+	try {
+		const raw = localStorage.getItem(OPEN_CHATS_KEY);
+		return raw ? JSON.parse(raw) : null;
+	} catch {
+		return null;
+	}
+}
+
+/** The saved desktop record for a ZIP path, if that ZIP was opened before. */
+async function findPersistedChatByPath(
+	filePath: string,
+): Promise<PersistedChatMetadata | undefined> {
+	const normalize = (p: string) => p.replace(/\\/g, '/').toLowerCase();
+	const target = normalize(filePath);
+	const persisted = await getPersistedChats();
+	return persisted.find(
+		(c) =>
+			isElectronPathReference(c.fileReference) &&
+			normalize(c.fileReference.filePath) === target,
+	);
+}
+
+// Don't record the list until the launch restore has finished, or the empty
+// sidebar at startup would wipe it.
+let openChatsRestored = $state(!isElectron);
+$effect(() => {
+	if (!browser || !isElectron || !openChatsRestored) return;
+	const ids = appState.chats
+		.map((c) => c.archiveId)
+		.filter((id) => pageState.getFileReference(id)?.filePath);
+	try {
+		localStorage.setItem(OPEN_CHATS_KEY, JSON.stringify(ids));
+	} catch {
+		// Storage unavailable: chats just won't reopen automatically
+	}
+});
+
 // Check for persisted chats on app load (one-time)
 let persistenceChecked = false;
 $effect(() => {
@@ -723,6 +801,18 @@ $effect(() => {
 				pageState.addRemembered(chat.id);
 			}
 
+			// Desktop app: silently reopen the chats that were open last time
+			const openIds = isElectron ? loadOpenChatIds() : null;
+			if (openIds) {
+				persistedChatsToRestore = persisted;
+				const known = new Set(persisted.map((c) => c.id));
+				await handleRestoreChats(
+					openIds.filter((id) => known.has(id)),
+					{ silent: true },
+				);
+				return;
+			}
+
 			// Check if user wants to skip the modal
 			const dontShow = await getDontShowRestoreModal();
 			if (dontShow) return;
@@ -732,12 +822,18 @@ $effect(() => {
 			showRestoreSessionModal = true;
 		} catch (e) {
 			console.error('Failed to check for persisted chats:', e);
+		} finally {
+			openChatsRestored = true;
 		}
 	})();
 });
 
-// Handle restoring selected chats
-async function handleRestoreChats(chatIds: string[]) {
+// Handle restoring selected chats. `silent` is the desktop launch restore: a
+// ZIP that has moved is reported instead of asking the user to find it.
+async function handleRestoreChats(
+	chatIds: string[],
+	{ silent = false }: { silent?: boolean } = {},
+) {
 	showRestoreSessionModal = false;
 
 	for (const chatId of chatIds) {
@@ -746,6 +842,14 @@ async function handleRestoreChats(chatIds: string[]) {
 
 		try {
 			const result = await restoreChat(persistedChat);
+
+			if (result.needsReselect && silent) {
+				showToast(
+					m.persistence_file_missing({ chatTitle: persistedChat.chatTitle }),
+					'error',
+				);
+				continue;
+			}
 
 			if (result.needsReselect) {
 				// Show reselect modal and wait for user response
@@ -978,7 +1082,10 @@ async function loadChatFromBuffer(
 	}
 }
 
-async function rememberChat(archiveId: string) {
+async function rememberChat(
+	archiveId: string,
+	{ silent = false }: { silent?: boolean } = {},
+) {
 	const chat = appState.chats.find((c) => c.archiveId === archiveId);
 	if (!chat) return;
 
@@ -1014,7 +1121,7 @@ async function rememberChat(archiveId: string) {
 		}
 
 		pageState.addRemembered(archiveId);
-		showToast(m.persistence_conversation_saved(), 'success');
+		if (!silent) showToast(m.persistence_conversation_saved(), 'success');
 	} catch (e) {
 		console.error('Failed to save conversation:', e);
 		showToast(m.persistence_save_failed(), 'error');
