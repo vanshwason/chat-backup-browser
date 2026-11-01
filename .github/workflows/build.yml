@@ -147,6 +147,8 @@ jobs:
 
       - name: Build Electron (Windows)
         if: startsWith(matrix.platform, 'win-')
+        # PowerShell would split the dotted -c.publish.channel argument
+        shell: bash
         run: npm run electron:build:win -- --${{ matrix.arch }} ${{ matrix.publish_args }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
