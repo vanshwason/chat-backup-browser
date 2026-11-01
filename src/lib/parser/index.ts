@@ -30,5 +30,4 @@ export {
 	loadMediaFile,
 	parseZipFile,
 	preloadMedia,
-	readFileAsArrayBuffer,
 } from './zip-parser';

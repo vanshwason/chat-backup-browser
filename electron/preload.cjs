@@ -3,16 +3,10 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
-	// File dialogs
-	openFile: () => ipcRenderer.invoke('dialog:openFile'),
-	openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
-
-	// File system operations
-	readFile: (filePath) => ipcRenderer.invoke('fs:readFile', filePath),
-	readDir: (dirPath) => ipcRenderer.invoke('fs:readDir', dirPath),
-	fileExists: (filePath) => ipcRenderer.invoke('fs:fileExists', filePath),
-
-	// Persistence file operations
+	// ZIP file access (the only files the renderer can reach)
+	zipFileSize: (filePath) => ipcRenderer.invoke('file:zipSize', filePath),
+	readZipRange: (filePath, offset, length) =>
+		ipcRenderer.invoke('file:readZipRange', filePath, offset, length),
 	readFileFromPath: (filePath) =>
 		ipcRenderer.invoke('file:readFromPath', filePath),
 

@@ -2,9 +2,9 @@ const {
 	app,
 	BrowserWindow,
 	ipcMain,
-	dialog,
 	protocol,
 	Menu,
+	session,
 	shell,
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
@@ -49,6 +49,36 @@ const getBuildPath = () => {
 	return path.join(__dirname, '../build');
 };
 
+const DEV_URL = 'http://localhost:5173';
+const REPO_PATH = '/vanshwason/chat-backup-browser';
+// What the app may ask of the browser. Everything else is refused.
+const ALLOWED_PERMISSIONS = new Set([
+	'clipboard-sanitized-write',
+	'fullscreen',
+]);
+
+const isAppUrl = (url) =>
+	url.startsWith('app://localhost/') ||
+	(process.env.NODE_ENV === 'development' && url.startsWith(DEV_URL));
+
+// Only web links reach the OS: file:, smb: and the like could run something.
+const openInBrowser = (url) => {
+	try {
+		const { protocol: scheme } = new URL(url);
+		if (scheme === 'https:' || scheme === 'http:') shell.openExternal(url);
+	} catch {
+		// Not a URL: nothing to open
+	}
+};
+
+// The renderer can only reach ZIP files, never arbitrary paths.
+const validZipPath = (filePath) => {
+	if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) return null;
+	if (filePath.split(/[/\\]+/).includes('..')) return null;
+	const normalized = path.resolve(filePath);
+	return path.extname(normalized).toLowerCase() === '.zip' ? normalized : null;
+};
+
 const createWindow = () => {
 	// Build window options
 	const windowOptions = {
@@ -60,7 +90,7 @@ const createWindow = () => {
 			preload: path.join(__dirname, 'preload.cjs'),
 			contextIsolation: true,
 			nodeIntegration: false,
-			sandbox: false,
+			sandbox: true,
 		},
 		titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
 		backgroundColor: '#ECE5DD',
@@ -85,6 +115,18 @@ const createWindow = () => {
 
 	// Create the browser window.
 	mainWindow = new BrowserWindow(windowOptions);
+
+	// This window only ever shows the app. Links open in the default browser.
+	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+		openInBrowser(url);
+		return { action: 'deny' };
+	});
+	mainWindow.webContents.on('will-navigate', (event, url) => {
+		if (!isAppUrl(url)) {
+			event.preventDefault();
+			openInBrowser(url);
+		}
+	});
 
 	// In development, load from Vite dev server
 	// In production, load from built files using custom protocol
@@ -113,6 +155,12 @@ protocol.registerSchemesAsPrivileged([
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.whenReady().then(() => {
+	session.defaultSession.setPermissionRequestHandler(
+		(_webContents, permission, callback) => {
+			callback(ALLOWED_PERMISSIONS.has(permission));
+		},
+	);
+
 	// Register protocol handler for 'app://' scheme
 	protocol.handle('app', async (request) => {
 		// Parse the URL to get just the pathname
@@ -128,7 +176,12 @@ app.whenReady().then(() => {
 		}
 
 		const buildPath = getBuildPath();
-		const filePath = path.join(buildPath, pathname);
+		const filePath = path.resolve(buildPath, pathname);
+
+		// The pathname is decoded, so "..%2F" must not escape the build folder
+		if (!filePath.startsWith(buildPath + path.sep)) {
+			return new Response('Forbidden', { status: 403 });
+		}
 
 		// Determine MIME type based on extension
 		const ext = path.extname(pathname).toLowerCase();
@@ -156,7 +209,10 @@ app.whenReady().then(() => {
 			// Read file using fs (works with ASAR)
 			const data = fs.readFileSync(filePath);
 			return new Response(data, {
-				headers: { 'Content-Type': mimeType },
+				headers: {
+					'Content-Type': mimeType,
+					'X-Content-Type-Options': 'nosniff',
+				},
 			});
 		} catch (err) {
 			console.error('[Protocol] Error reading file:', filePath, err.message);
@@ -188,91 +244,54 @@ app.on('window-all-closed', () => {
 });
 
 // IPC Handlers for file operations
-ipcMain.handle('dialog:openFile', async () => {
-	const result = await dialog.showOpenDialog(mainWindow, {
-		properties: ['openFile'],
-		filters: [
-			{ name: 'WhatsApp chat exports', extensions: ['zip'] },
-			{ name: 'All Files', extensions: ['*'] },
-		],
-	});
-
-	if (result.canceled || result.filePaths.length === 0) {
+// Size of a ZIP, or null if it isn't there (for example moved or deleted)
+ipcMain.handle('file:zipSize', async (_event, filePath) => {
+	const normalized = validZipPath(filePath);
+	if (!normalized) return null;
+	try {
+		const stat = await fs.promises.lstat(normalized);
+		return stat.isFile() && !stat.isSymbolicLink() ? stat.size : null;
+	} catch {
 		return null;
 	}
-
-	const filePath = result.filePaths[0];
-	const fileName = path.basename(filePath);
-	const fileContent = fs.readFileSync(filePath);
-
-	return {
-		path: filePath,
-		name: fileName,
-		// Slice the buffer to avoid sending the entire Node.js Buffer pool
-		buffer: fileContent.buffer.slice(
-			fileContent.byteOffset,
-			fileContent.byteOffset + fileContent.byteLength,
-		),
-	};
 });
 
-ipcMain.handle('dialog:openFolder', async () => {
-	const result = await dialog.showOpenDialog(mainWindow, {
-		properties: ['openDirectory'],
-	});
-
-	if (result.canceled || result.filePaths.length === 0) {
-		return null;
-	}
-
-	return result.filePaths[0];
-});
-
-ipcMain.handle('fs:readFile', async (_event, filePath) => {
-	try {
-		const content = fs.readFileSync(filePath);
-		return { success: true, data: content.buffer };
-	} catch (error) {
-		return { success: false, error: error.message };
-	}
-});
-
-ipcMain.handle('fs:readDir', async (_event, dirPath) => {
-	try {
-		const files = fs.readdirSync(dirPath, { withFileTypes: true });
-		return {
-			success: true,
-			data: files.map((f) => ({
-				name: f.name,
-				isDirectory: f.isDirectory(),
-				path: path.join(dirPath, f.name),
-			})),
-		};
-	} catch (error) {
-		return { success: false, error: error.message };
-	}
-});
-
-ipcMain.handle('fs:fileExists', async (_event, filePath) => {
-	return fs.existsSync(filePath);
-});
+// Read part of a ZIP, so large exports never have to be held in memory
+ipcMain.handle(
+	'file:readZipRange',
+	async (_event, filePath, offset, length) => {
+		const normalized = validZipPath(filePath);
+		if (
+			!normalized ||
+			!Number.isSafeInteger(offset) ||
+			!Number.isSafeInteger(length) ||
+			offset < 0 ||
+			length < 0
+		) {
+			throw new Error('Invalid read request');
+		}
+		const stat = await fs.promises.lstat(normalized);
+		if (!stat.isFile() || stat.isSymbolicLink()) {
+			throw new Error('Path is not a regular file');
+		}
+		const size = Math.min(length, Math.max(0, stat.size - offset));
+		const data = new ArrayBuffer(size);
+		const fd = await fs.promises.open(normalized, fs.constants.O_RDONLY);
+		try {
+			await fd.read(new Uint8Array(data), 0, size, offset);
+		} finally {
+			await fd.close();
+		}
+		return data;
+	},
+);
 
 // Read file from absolute path (for persistence)
 ipcMain.handle('file:readFromPath', async (_event, filePath) => {
 	try {
-		if (typeof filePath !== 'string') {
+		const normalized = validZipPath(filePath);
+		if (!normalized) {
 			return { success: false, error: 'Invalid file path' };
-		}
-		const normalized = path.resolve(filePath);
-		// Require absolute path and reject path traversal segments
-		if (!path.isAbsolute(filePath)) {
-			return { success: false, error: 'Invalid file path' };
-		}
-		if (filePath.split(/[/\\]+/).includes('..')) {
-			return { success: false, error: 'Invalid file path' };
-		}
-		if (path.extname(normalized).toLowerCase() !== '.zip') {
-			return { success: false, error: 'Only .zip files are allowed' };
 		}
 
 		// Pre-check with lstat to reject symlinks (works cross-platform including Windows)
@@ -309,8 +328,14 @@ ipcMain.handle('file:readFromPath', async (_event, filePath) => {
 });
 
 ipcMain.handle('shell:openExternal', async (_event, url) => {
-	// Validate URL before opening
-	if (!url.startsWith('https://github.com/vanshwason/chat-backup-browser')) {
+	// Only this project's own GitHub pages may be opened from here
+	const parsed = new URL(url);
+	if (
+		parsed.protocol !== 'https:' ||
+		parsed.hostname !== 'github.com' ||
+		(parsed.pathname !== REPO_PATH &&
+			!parsed.pathname.startsWith(`${REPO_PATH}/`))
+	) {
 		throw new Error('Invalid URL');
 	}
 	await shell.openExternal(url);

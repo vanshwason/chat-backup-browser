@@ -1,9 +1,8 @@
 /**
  * Shared file-picker helpers for ZIP imports.
  *
- * Centralises the showOpenFilePicker (Web) and electronAPI.openFile (Electron)
- * patterns so they are not duplicated across FileDropZone, ReselectFileModal,
- * and +page.svelte.
+ * Centralises the showOpenFilePicker (Web) and Electron picker patterns so they
+ * are not duplicated across FileDropZone, ReselectFileModal, and +page.svelte.
  */
 
 /**
@@ -40,7 +39,8 @@ export async function openZipFilePicker(multiple = false): Promise<{
 }
 
 /**
- * Open a file via Electron's native dialog and return a File + absolute path.
+ * Open a ZIP in Electron and return a File + absolute path. A file input gives
+ * a disk-backed File, so nothing is loaded into memory by picking it.
  * Returns null when not running in Electron or the user cancelled.
  */
 export async function openElectronFile(): Promise<{
@@ -49,12 +49,17 @@ export async function openElectronFile(): Promise<{
 } | null> {
 	if (!window.electronAPI) return null;
 
-	const result = await window.electronAPI.openFile();
-	if (!result) return null;
-
-	const blob = new Blob([result.buffer]);
-	const file = new File([blob], result.name, { type: 'application/zip' });
-	return { file, path: result.path };
+	return new Promise((resolve) => {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.zip';
+		input.onchange = () => {
+			const file = input.files?.[0];
+			resolve(file ? { file, path: getElectronFilePath(file) ?? '' } : null);
+		};
+		input.oncancel = () => resolve(null);
+		input.click();
+	});
 }
 
 /**

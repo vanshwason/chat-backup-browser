@@ -116,4 +116,6 @@ Never manually edit `CHANGELOG.md` or `package.json` version.
 - **No ESLint** - project uses Biome
 - **No hardcoded strings** - use paraglide `m.key()`
 - **No heavy main-thread operations** - use workers
+- **Never load a whole ZIP into memory** - read entries on demand with `src/lib/parser/lazy-zip.ts`
+- **Keep the desktop app locked down** - sandbox on, no new windows or navigation, renderer reaches only ZIPs through the preload bridge, CSP in `src/app.html`
 - **Stay fast with huge chats** (36k+ messages, 4k+ media): window or batch every list, never mount hidden heavy panels, measure DOM size and frame time on the biggest chat before and after

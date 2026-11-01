@@ -46,7 +46,9 @@ All three use the same code, and all processing happens on your own devices.
 
 ## Get started
 
-The full step-by-step guide is in **[docs/SETUP.md](docs/SETUP.md)**. In short:
+**Just want the app?** Download the installer for your system from the [latest release](https://github.com/vanshwason/chat-backup-browser/releases/latest).
+
+To build it yourself or set up phone access, follow **[docs/SETUP.md](docs/SETUP.md)**. In short:
 
 ```bash
 git clone https://github.com/vanshwason/chat-backup-browser.git

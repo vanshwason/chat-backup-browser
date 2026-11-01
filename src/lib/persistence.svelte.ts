@@ -20,6 +20,11 @@
 import { del, get, keys, set } from 'idb-keyval';
 import { browser } from '$app/environment';
 import type { Bookmark, PersistedBookmark } from './bookmarks.svelte';
+import {
+	type ArchiveSource,
+	openLazyZip,
+	openZipSource,
+} from './parser/lazy-zip';
 import type { ChatData } from './state.svelte';
 
 export interface PersistedChatMetadata {
@@ -603,7 +608,7 @@ export async function restoreChat(
 ): Promise<{
 	success: boolean;
 	data?: {
-		buffer: ArrayBuffer;
+		source: ArchiveSource;
 		name: string;
 		metadata: PersistedChatMetadata;
 	};
@@ -624,10 +629,10 @@ export async function restoreChat(
 			}
 
 			// Check if file exists
-			const exists = await window.electronAPI.fileExists(
-				fileReference.filePath,
-			);
-			if (!exists) {
+			const api = window.electronAPI;
+			const { filePath } = fileReference;
+			const size = await api.zipFileSize(filePath);
+			if (size === null) {
 				return {
 					success: false,
 					error: 'File not found at saved path',
@@ -635,10 +640,26 @@ export async function restoreChat(
 				};
 			}
 
-			// Read file from path
-			const result = await window.electronAPI.readFileFromPath(
-				fileReference.filePath,
-			);
+			// Read the ZIP from disk on demand instead of loading it into memory
+			try {
+				const source = await openLazyZip(
+					persistedChat.fileName,
+					size,
+					(offset, length) => api.readZipRange(filePath, offset, length),
+				);
+				return {
+					success: true,
+					data: {
+						source,
+						name: persistedChat.fileName,
+						metadata: persistedChat,
+					},
+				};
+			} catch (e) {
+				console.warn('Lazy ZIP reading unavailable, loading whole file:', e);
+			}
+
+			const result = await api.readFileFromPath(filePath);
 			if (!result.success || !result.buffer) {
 				return {
 					success: false,
@@ -650,7 +671,7 @@ export async function restoreChat(
 			return {
 				success: true,
 				data: {
-					buffer: result.buffer,
+					source: result.buffer,
 					name: result.name || persistedChat.fileName,
 					metadata: persistedChat,
 				},
@@ -681,11 +702,10 @@ export async function restoreChat(
 			// Read file from handle
 			try {
 				const fileFromHandle = await handle.getFile();
-				const buffer = await fileFromHandle.arrayBuffer();
 				return {
 					success: true,
 					data: {
-						buffer,
+						source: await openZipSource(fileFromHandle),
 						name: fileFromHandle.name,
 						metadata: persistedChat,
 					},
@@ -707,11 +727,10 @@ export async function restoreChat(
 			}
 
 			// User provided file - use it
-			const buffer = await file.arrayBuffer();
 			return {
 				success: true,
 				data: {
-					buffer,
+					source: await openZipSource(file),
 					name: file.name,
 					metadata: persistedChat,
 				},
@@ -728,25 +747,6 @@ export async function restoreChat(
 	}
 }
 
-/**
- * Get "don't show again" preference
- */
-export async function getDontShowRestoreModal(): Promise<boolean> {
-	if (!browser) return false;
-	try {
-		return (await get<boolean>(DONT_SHOW_KEY)) || false;
-	} catch (e) {
-		console.error('Failed to get dont-show-restore-modal preference:', e);
-		return false;
-	}
-}
-
-/**
- * Set "don't show again" preference
- */
-export async function setDontShowRestoreModal(value: boolean): Promise<void> {
-	if (!browser) return;
-	try {
 const OPEN_CHATS_KEY = 'desktop-open-chats';
 
 /**
@@ -772,6 +772,25 @@ export async function saveOpenChatIds(ids: string[]): Promise<void> {
 	}
 }
 
+/**
+ * Get "don't show again" preference
+ */
+export async function getDontShowRestoreModal(): Promise<boolean> {
+	if (!browser) return false;
+	try {
+		return (await get<boolean>(DONT_SHOW_KEY)) || false;
+	} catch (e) {
+		console.error('Failed to get dont-show-restore-modal preference:', e);
+		return false;
+	}
+}
+
+/**
+ * Set "don't show again" preference
+ */
+export async function setDontShowRestoreModal(value: boolean): Promise<void> {
+	if (!browser) return;
+	try {
 		await set(DONT_SHOW_KEY, value);
 	} catch (e) {
 		console.error('Failed to set dont show preference:', e);

@@ -563,28 +563,6 @@ function matchOmittedMediaByTimestamp(
 }
 
 /**
- * Read a file as ArrayBuffer with progress callback
- */
-export function readFileAsArrayBuffer(
-	file: File,
-	onProgress?: (progress: number) => void,
-): Promise<ArrayBuffer> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => resolve(reader.result as ArrayBuffer);
-		reader.onerror = () => reject(reader.error);
-		if (onProgress) {
-			reader.onprogress = (event) => {
-				if (event.lengthComputable) {
-					onProgress((event.loaded / event.total) * 100);
-				}
-			};
-		}
-		reader.readAsArrayBuffer(file);
-	});
-}
-
-/**
  * Get MIME type from filename extension
  */
 function getMimeType(filename: string): string {

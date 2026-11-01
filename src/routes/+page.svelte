@@ -61,17 +61,18 @@ import {
 	isMobileViewport,
 } from '$lib/helpers/responsive';
 import * as m from '$lib/paraglide/messages';
-import { parseZipFile, readFileAsArrayBuffer } from '$lib/parser';
+import { parseZipFile } from '$lib/parser';
+import { type ArchiveSource, openZipSource } from '$lib/parser/lazy-zip';
 import {
 	acceptValidatedRestore,
 	getDontShowRestoreModal,
-	getPersistedChats,
 	getOpenChatIds,
+	getPersistedChats,
 	isElectronPathReference,
 	type PersistedChatMetadata,
 	restoreChat,
-	savePersistedChat,
 	saveOpenChatIds,
+	savePersistedChat,
 	storeFileHandle,
 	updatePersistedChat,
 } from '$lib/persistence.svelte';
@@ -494,22 +495,10 @@ async function handleFilesSelected(
 		// Process file asynchronously
 		(async () => {
 			try {
-				// Read file (0-10% of progress)
-				const buffer = await readFileAsArrayBuffer(file, (readProgress) => {
-					loadingChats = loadingChats.map((lc) =>
-						lc.id === loadingId
-							? {
-									...lc,
-									progress: readProgress * 0.1,
-									stage: 'reading' as const,
-								}
-							: lc,
-					);
-				});
-
-				// Parse ZIP file using Web Worker
+				// Parse ZIP file using Web Worker. Only its index is read here;
+				// media stays on disk until it's needed.
 				const chatData: ChatData = await parseZipFile(
-					buffer,
+					await openZipSource(file),
 					makeProgressCallback(loadingId),
 				);
 
@@ -782,11 +771,6 @@ $effect(() => {
 			if (persisted.length === 0) return;
 			// Chats come from the laptop library; no restore prompt needed
 			if (isRemoteLibrary) return;
-				const openIds =
-					(await getOpenChatIds()) ??
-					persisted
-						.filter((c) => isElectronPathReference(c.fileReference))
-						.map((c) => c.id);
 
 			// Seed rememberedChats from IndexedDB so toggle state is correct
 			// even if user skips the restore modal or clicks "Start Fresh"
@@ -798,6 +782,11 @@ $effect(() => {
 			if (isElectron) {
 				persistedChatsToRestore = persisted;
 				const known = new Set(persisted.map((c) => c.id));
+				const openIds =
+					(await getOpenChatIds()) ??
+					persisted
+						.filter((c) => isElectronPathReference(c.fileReference))
+						.map((c) => c.id);
 				await handleRestoreChats(
 					openIds.filter((id) => known.has(id)),
 					{ silent: true },
@@ -858,9 +847,8 @@ async function handleRestoreChats(
 				showReselectFileModal = false;
 
 				if (reselected) {
-					const reselectedBuffer = await reselected.file.arrayBuffer();
-					const { validationPassed } = await loadChatFromBuffer(
-						reselectedBuffer,
+					const { validationPassed } = await loadChatFromSource(
+						await openZipSource(reselected.file),
 						reselected.file.name,
 						persistedChat,
 					);
@@ -911,8 +899,8 @@ async function handleRestoreChats(
 			}
 
 			// Parse and load the chat
-			await loadChatFromBuffer(
-				result.data.buffer,
+			await loadChatFromSource(
+				result.data.source,
 				result.data.name,
 				persistedChat,
 				isElectronPathReference(result.data.metadata.fileReference)
@@ -964,8 +952,8 @@ function handleStartFresh() {
 }
 
 // Load chat from buffer with optional restoration metadata
-async function loadChatFromBuffer(
-	buffer: ArrayBuffer,
+async function loadChatFromSource(
+	source: ArchiveSource,
 	fileName: string,
 	restoredMetadata?: PersistedChatMetadata,
 	filePath?: string,
@@ -987,7 +975,7 @@ async function loadChatFromBuffer(
 	try {
 		// Parse ZIP file using Web Worker
 		const chatData: ChatData = await parseZipFile(
-			buffer,
+			source,
 			makeProgressCallback(loadingId),
 			restoredMetadata?.id,
 		);
