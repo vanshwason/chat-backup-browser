@@ -4,6 +4,7 @@
  */
 
 import { browser } from '$app/environment';
+import { DEFAULT_LANGUAGE } from './global-search/archive-page-state.svelte';
 import {
 	postIfTranscriptionRequestAccepted,
 	TranscriptionRequestManager,
@@ -13,7 +14,7 @@ import {
 const TRANSCRIPTION_INACTIVITY_TIMEOUT_MS = 90_000;
 
 // Default language for transcription (can be changed by user)
-let transcriptionLanguage = $state<string>('portuguese');
+let transcriptionLanguage = $state<string>(DEFAULT_LANGUAGE);
 
 // Reactive transcription store - enables search integration. Message IDs are
 // only unique inside their imported archive, so use an injective composite key.
@@ -158,8 +159,9 @@ export function setTranscriptionLanguage(lang: string): void {
  */
 export function getAvailableLanguages(): { code: string; name: string }[] {
 	return [
-		{ code: 'portuguese', name: 'Português' },
+		{ code: 'auto', name: 'Auto-detect' },
 		{ code: 'english', name: 'English' },
+		{ code: 'pt', name: 'Português' },
 		{ code: 'spanish', name: 'Español' },
 		{ code: 'french', name: 'Français' },
 		{ code: 'german', name: 'Deutsch' },
@@ -169,7 +171,6 @@ export function getAvailableLanguages(): { code: string; name: string }[] {
 		{ code: 'chinese', name: '中文' },
 		{ code: 'korean', name: '한국어' },
 		{ code: 'russian', name: 'Русский' },
-		{ code: 'auto', name: 'Auto-detect' },
 	];
 }
 

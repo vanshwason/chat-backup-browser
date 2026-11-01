@@ -37,7 +37,10 @@ import RestoreSessionModal from '$lib/components/RestoreSessionModal.svelte';
 import Toast from '$lib/components/Toast.svelte';
 import { galleryState } from '$lib/gallery.svelte';
 import { findArchiveIndex } from '$lib/global-search/archive-navigation';
-import { createArchivePageState } from '$lib/global-search/archive-page-state.svelte';
+import {
+	createArchivePageState,
+	LEGACY_DEFAULT_LANGUAGE,
+} from '$lib/global-search/archive-page-state.svelte';
 import { createGlobalSearchState } from '$lib/global-search/global-search-state.svelte';
 import {
 	createGlobalSearchHarnessTransport,
@@ -226,6 +229,11 @@ $effect(() => {
 // so language, perspective, auto-load preference, remembered flag and file
 // reference all live behind a single factory consumed here and by tests.
 const pageState = createArchivePageState();
+// Keep the transcription language on the open chat, however it was opened
+$effect(() => {
+	const chat = appState.selectedChat;
+	if (chat) setTranscriptionLanguage(pageState.getLanguage(chat.archiveId));
+});
 
 // ── Global search (GH-67 §5/§7/§8) ──────────────────────────────────────
 // Wired against the real approved persistence + worker/controller contracts.
@@ -593,12 +601,6 @@ async function loadRemoteChat(info: RemoteChatInfo) {
 
 function handleSelectChat(index: number) {
 	appState.selectChat(index);
-	// Set the transcription language for this chat
-	const chat = appState.chats[index];
-	if (chat) {
-		const lang = pageState.getLanguage(chat.archiveId);
-		setTranscriptionLanguage(lang);
-	}
 	// On mobile, collapse sidebar after selecting a chat
 	if (browser && isMobileViewport()) {
 		showSidebar = false;
@@ -621,10 +623,6 @@ function handleRemoveChat(index: number) {
 
 function handleLanguageChange(archiveId: string, language: string) {
 	pageState.setLanguage(archiveId, language);
-	// If this is the currently selected chat, update the transcription service
-	if (appState.selectedChat?.archiveId === archiveId) {
-		setTranscriptionLanguage(language);
-	}
 }
 
 function handleAutoLoadMediaChange(archiveId: string, enabled: boolean) {
@@ -1003,7 +1001,10 @@ async function loadChatFromSource(
 						setTranscriptionsForChat(chatData.archiveId, transcriptions);
 					},
 					applySettings: (settings) => {
-						if (settings.language) {
+						if (
+							settings.language &&
+							settings.language !== LEGACY_DEFAULT_LANGUAGE
+						) {
 							pageState.setLanguage(chatData.archiveId, settings.language);
 						}
 						if (settings.autoLoadMedia !== undefined) {

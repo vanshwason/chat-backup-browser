@@ -44,7 +44,11 @@ export interface ArchivePageState {
 	readonly fileReferencesByArchive: Map<string, ArchiveFileReference>;
 }
 
-const DEFAULT_LANGUAGE = 'portuguese';
+export const DEFAULT_LANGUAGE = 'auto';
+
+// Every chat saved before auto-detect stored this as its default, so it says
+// nothing about the speech. Picking Portuguese now stores 'pt' instead.
+export const LEGACY_DEFAULT_LANGUAGE = 'portuguese';
 
 export function createArchivePageState(): ArchivePageState {
 	let languageByArchive = $state<Map<string, string>>(new Map());

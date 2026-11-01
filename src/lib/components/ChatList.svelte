@@ -1,5 +1,6 @@
 <script lang="ts">
 import { floating } from '$lib/actions/floating';
+import { DEFAULT_LANGUAGE } from '$lib/global-search/archive-page-state.svelte';
 import { formatRelativeDate } from '$lib/helpers/format';
 import * as m from '$lib/paraglide/messages';
 import { getLocale } from '$lib/paraglide/runtime';
@@ -102,7 +103,7 @@ function cancelHideSubmenu() {
 }
 
 function getLanguageForChat(archiveId: string): string {
-	return languageByChat.get(archiveId) || 'portuguese';
+	return languageByChat.get(archiveId) || DEFAULT_LANGUAGE;
 }
 
 function getLanguageName(code: string): string {
