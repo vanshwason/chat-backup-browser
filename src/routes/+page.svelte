@@ -66,10 +66,12 @@ import {
 	acceptValidatedRestore,
 	getDontShowRestoreModal,
 	getPersistedChats,
+	getOpenChatIds,
 	isElectronPathReference,
 	type PersistedChatMetadata,
 	restoreChat,
 	savePersistedChat,
+	saveOpenChatIds,
 	storeFileHandle,
 	updatePersistedChat,
 } from '$lib/persistence.svelte';
@@ -742,16 +744,6 @@ const currentUser = $derived.by(() => {
 // Desktop app: the chats open in the sidebar are reopened on the next launch
 // without asking. This is the list of their archive ids, in sidebar order;
 // closing a chat drops it from the list (its saved data stays).
-const OPEN_CHATS_KEY = 'desktop-open-chats';
-
-function loadOpenChatIds(): string[] | null {
-	try {
-		const raw = localStorage.getItem(OPEN_CHATS_KEY);
-		return raw ? JSON.parse(raw) : null;
-	} catch {
-		return null;
-	}
-}
 
 /** The saved desktop record for a ZIP path, if that ZIP was opened before. */
 async function findPersistedChatByPath(
@@ -775,11 +767,7 @@ $effect(() => {
 	const ids = appState.chats
 		.map((c) => c.archiveId)
 		.filter((id) => pageState.getFileReference(id)?.filePath);
-	try {
-		localStorage.setItem(OPEN_CHATS_KEY, JSON.stringify(ids));
-	} catch {
-		// Storage unavailable: chats just won't reopen automatically
-	}
+	void saveOpenChatIds(ids);
 });
 
 // Check for persisted chats on app load (one-time)
@@ -794,6 +782,11 @@ $effect(() => {
 			if (persisted.length === 0) return;
 			// Chats come from the laptop library; no restore prompt needed
 			if (isRemoteLibrary) return;
+				const openIds =
+					(await getOpenChatIds()) ??
+					persisted
+						.filter((c) => isElectronPathReference(c.fileReference))
+						.map((c) => c.id);
 
 			// Seed rememberedChats from IndexedDB so toggle state is correct
 			// even if user skips the restore modal or clicks "Start Fresh"
@@ -802,8 +795,7 @@ $effect(() => {
 			}
 
 			// Desktop app: silently reopen the chats that were open last time
-			const openIds = isElectron ? loadOpenChatIds() : null;
-			if (openIds) {
+			if (isElectron) {
 				persistedChatsToRestore = persisted;
 				const known = new Set(persisted.map((c) => c.id));
 				await handleRestoreChats(

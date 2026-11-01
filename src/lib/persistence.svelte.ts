@@ -747,6 +747,31 @@ export async function getDontShowRestoreModal(): Promise<boolean> {
 export async function setDontShowRestoreModal(value: boolean): Promise<void> {
 	if (!browser) return;
 	try {
+const OPEN_CHATS_KEY = 'desktop-open-chats';
+
+/**
+ * Archive ids of the chats open in the desktop sidebar, or null if never saved.
+ * Kept in IndexedDB: localStorage isn't reliably on disk when Electron exits.
+ */
+export async function getOpenChatIds(): Promise<string[] | null> {
+	if (!browser) return null;
+	try {
+		return (await get<string[]>(OPEN_CHATS_KEY)) ?? null;
+	} catch (e) {
+		console.error('Failed to read open chats:', e);
+		return null;
+	}
+}
+
+export async function saveOpenChatIds(ids: string[]): Promise<void> {
+	if (!browser) return;
+	try {
+		await set(OPEN_CHATS_KEY, ids);
+	} catch (e) {
+		console.error('Failed to save open chats:', e);
+	}
+}
+
 		await set(DONT_SHOW_KEY, value);
 	} catch (e) {
 		console.error('Failed to set dont show preference:', e);
