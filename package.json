@@ -1,7 +1,7 @@
 {
 	"name": "chat-backup-browser",
 	"productName": "Chat Backup Browser",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Browse your WhatsApp chat exports offline, on desktop and on your phone. Not affiliated with WhatsApp or Meta.",
 	"license": "AGPL-3.0",
 	"author": {

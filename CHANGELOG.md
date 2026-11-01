@@ -1,3 +1,16 @@
+## [1.0.1](https://github.com/vanshwason/chat-backup-browser/compare/v1.0.0...v1.0.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **build:** give arm64 builds their own update channel ([0bba951](https://github.com/vanshwason/chat-backup-browser/commit/0bba951093651cdbfc7926f31f4a21ad239d3c67))
+* **desktop:** reopen chats reliably after a restart ([4c5fe17](https://github.com/vanshwason/chat-backup-browser/commit/4c5fe17a49b731fe818ee7f7c51d1f0fb3283963))
+
+
+### Performance Improvements
+
+* read ZIPs on demand, and harden the desktop app ([844e7b0](https://github.com/vanshwason/chat-backup-browser/commit/844e7b02b6053c2daa0b565f8d7a3fae3ec827e3))
+
 # 1.0.0 (2026-10-30)
 
 
