@@ -63,6 +63,8 @@ jobs:
           - os: macos-14
             platform: mac-arm64
             arch: arm64
+            # Each build job writes the same update file, so arm64 gets its own channel
+            publish_args: -c.publish.channel=latest-arm64
           - os: macos-14
             platform: mac-x64
             arch: x64
@@ -72,6 +74,7 @@ jobs:
           - os: windows-latest
             platform: win-arm64
             arch: arm64
+            publish_args: -c.publish.channel=latest-arm64
           - os: ubuntu-latest
             platform: linux-x64
             arch: x64
@@ -138,13 +141,13 @@ jobs:
 
       - name: Build Electron (macOS)
         if: startsWith(matrix.platform, 'mac-')
-        run: npm run electron:build:mac -- --${{ matrix.arch }}
+        run: npm run electron:build:mac -- --${{ matrix.arch }} ${{ matrix.publish_args }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Electron (Windows)
         if: startsWith(matrix.platform, 'win-')
-        run: npm run electron:build:win -- --${{ matrix.arch }}
+        run: npm run electron:build:win -- --${{ matrix.arch }} ${{ matrix.publish_args }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
