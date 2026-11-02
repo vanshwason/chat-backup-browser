@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { type ChatData, createAppState } from '$lib/state.svelte';
-import { createArchivePageState } from './archive-page-state.svelte';
+import {
+	createArchivePageState,
+	DEFAULT_LANGUAGE,
+} from './archive-page-state.svelte';
 
 function createChat(archiveId: string): ChatData {
 	return {
@@ -90,7 +93,7 @@ describe('archive page state is keyed by archiveId, not title', () => {
 		state.removeArchive(first.archiveId);
 
 		// First archive falls back to defaults.
-		expect(state.getLanguage(first.archiveId)).toBe('portuguese');
+		expect(state.getLanguage(first.archiveId)).toBe(DEFAULT_LANGUAGE);
 		expect(state.getPerspective(first.archiveId)).toBeNull();
 		expect(state.getAutoLoadMedia(first.archiveId)).toBe(false);
 		expect(state.isRemembered(first.archiveId)).toBe(false);
