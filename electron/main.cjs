@@ -1,6 +1,7 @@
 const {
 	app,
 	BrowserWindow,
+	dialog,
 	ipcMain,
 	protocol,
 	Menu,
@@ -70,6 +71,27 @@ const openInBrowser = (url) => {
 		// Not a URL: nothing to open
 	}
 };
+
+// A free path in `folder` for a file the page asked to save. The name comes
+// from the page, so only its base name is kept, minus characters Windows
+// refuses: "photo.jpg", or "photo (1).jpg" if that exists.
+const uniqueSavePath = (folder, requestedName) => {
+	const safeName =
+		path
+			.basename(String(requestedName || ''))
+			.replace(/[<>:"/\\|?*]/g, '_')
+			.trim() || 'download';
+	const ext = path.extname(safeName);
+	const stem = safeName.slice(0, safeName.length - ext.length);
+	let candidate = path.join(folder, safeName);
+	for (let n = 1; fs.existsSync(candidate); n++) {
+		candidate = path.join(folder, `${stem} (${n})${ext}`);
+	}
+	return candidate;
+};
+
+// The folder the last save went to, offered again by the next Save dialog
+let lastSaveFolder = null;
 
 // The renderer can only reach ZIP files, never arbitrary paths.
 const validZipPath = (filePath) => {
@@ -160,6 +182,35 @@ app.whenReady().then(() => {
 			callback(ALLOWED_PERMISSIONS.has(permission));
 		},
 	);
+
+	// Saves from the app (the viewer's Save, gallery ZIPs) ask where to save
+	// every time, starting in Downloads and then in the last folder used. The
+	// file's own name is filled in; cancelling saves nothing.
+	session.defaultSession.on('will-download', (_event, item, webContents) => {
+		const folder = lastSaveFolder ?? app.getPath('downloads');
+		const suggested = uniqueSavePath(folder, item.getFilename());
+		const ext = path.extname(suggested).slice(1);
+		const owner = BrowserWindow.fromWebContents(webContents) ?? mainWindow;
+		const options = {
+			title: 'Save As',
+			defaultPath: suggested,
+			filters: [
+				...(ext
+					? [{ name: `${ext.toUpperCase()} file`, extensions: [ext] }]
+					: []),
+				{ name: 'All files', extensions: ['*'] },
+			],
+		};
+		const chosen = owner
+			? dialog.showSaveDialogSync(owner, options)
+			: dialog.showSaveDialogSync(options);
+		if (!chosen) {
+			item.cancel();
+			return;
+		}
+		lastSaveFolder = path.dirname(chosen);
+		item.setSavePath(chosen);
+	});
 
 	// Register protocol handler for 'app://' scheme
 	protocol.handle('app', async (request) => {

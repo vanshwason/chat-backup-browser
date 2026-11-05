@@ -62,13 +62,42 @@ function toDateKey(timestamp?: string): DateKey | null {
 	return `${year}-${month}-${day}`;
 }
 
-/** Valid media type filter values */
-export type MediaTypeFilter =
-	| 'image'
-	| 'video'
-	| 'audio'
-	| 'document'
-	| 'other';
+/**
+ * Oldest to newest, matching the gallery grid read backwards: by day, chat
+ * order within a day, undated items first. Used by the viewer's previous/next.
+ */
+export function inViewerOrder(list: GalleryItem[]): GalleryItem[] {
+	const keyed = list.map((item) => ({
+		item,
+		key: toDateKey(item.messageTimestamp) ?? '',
+	}));
+	// Array.prototype.sort is stable, so chat order holds within a day
+	keyed.sort((x, y) => x.key.localeCompare(y.key));
+	return keyed.map((entry) => entry.item);
+}
+
+/** What the gallery's checkboxes show or hide */
+export type MediaCategory = 'media' | 'voice' | 'sticker' | 'document';
+
+export const MEDIA_CATEGORIES: MediaCategory[] = [
+	'media',
+	'voice',
+	'sticker',
+	'document',
+];
+
+// Android names stickers STK-…webp and iOS …-STICKER-…webp; WhatsApp sends
+// photos as JPEG, so any .webp image is a sticker
+const STICKER_NAME = /STICKER|(^|\/)STK-|\.webp$/i;
+
+export function mediaCategory(item: GalleryItem): MediaCategory {
+	if (item.type === 'image') {
+		return STICKER_NAME.test(item.name) ? 'sticker' : 'media';
+	}
+	if (item.type === 'video') return 'media';
+	if (item.type === 'audio') return 'voice';
+	return 'document';
+}
 
 function createGalleryState() {
 	let selectedMediaPaths = $state<Set<string>>(new Set());
@@ -78,11 +107,10 @@ function createGalleryState() {
 
 	// Filter state (stored as Sets internally for O(1) operations)
 	let filterParticipantsSet = $state<Set<string>>(new Set());
-	let filterTypesSet = $state<Set<MediaTypeFilter>>(new Set());
+	let hiddenCategories = $state<Set<MediaCategory>>(new Set());
 
 	// Expose filters as arrays for external consumption
 	const filterParticipants = $derived(Array.from(filterParticipantsSet));
-	const filterTypes = $derived(Array.from(filterTypesSet));
 
 	/** All items (unfiltered) */
 	const allItems = $derived.by(() => {
@@ -117,9 +145,10 @@ function createGalleryState() {
 			);
 		}
 
-		// Filter by types
-		if (filterTypesSet.size > 0) {
-			result = result.filter((item) => filterTypesSet.has(item.type));
+		if (hiddenCategories.size > 0) {
+			result = result.filter(
+				(item) => !hiddenCategories.has(mediaCategory(item)),
+			);
 		}
 
 		return result;
@@ -127,8 +156,20 @@ function createGalleryState() {
 
 	/** Whether any filter is active */
 	const hasActiveFilter = $derived(
-		filterParticipantsSet.size > 0 || filterTypesSet.size > 0,
+		filterParticipantsSet.size > 0 || hiddenCategories.size > 0,
 	);
+
+	/** How many items of each category the chat has, for the checkboxes */
+	const categoryCounts = $derived.by(() => {
+		const counts: Record<MediaCategory, number> = {
+			media: 0,
+			voice: 0,
+			sticker: 0,
+			document: 0,
+		};
+		for (const item of allItems) counts[mediaCategory(item)]++;
+		return counts;
+	});
 
 	/** Items grouped by date (YYYY-MM-DD), sorted newest first */
 	const itemsByDate = $derived.by(() => {
@@ -192,7 +233,7 @@ function createGalleryState() {
 		lastChatTitle = currentTitle;
 		// Reset filters when changing chats
 		filterParticipantsSet = new Set();
-		filterTypesSet = new Set();
+		hiddenCategories = new Set();
 	}
 
 	function toggleParticipantFilter(participant: string): void {
@@ -204,18 +245,16 @@ function createGalleryState() {
 		filterParticipantsSet = new Set(filterParticipantsSet);
 	}
 
-	function toggleTypeFilter(type: MediaTypeFilter): void {
-		if (filterTypesSet.has(type)) {
-			filterTypesSet.delete(type);
-		} else {
-			filterTypesSet.add(type);
-		}
-		filterTypesSet = new Set(filterTypesSet);
+	function toggleCategory(category: MediaCategory): void {
+		const next = new Set(hiddenCategories);
+		if (next.has(category)) next.delete(category);
+		else next.add(category);
+		hiddenCategories = next;
 	}
 
 	function clearFilters(): void {
 		filterParticipantsSet = new Set();
-		filterTypesSet = new Set();
+		hiddenCategories = new Set();
 	}
 
 	function isSelected(path: string): boolean {
@@ -318,8 +357,11 @@ function createGalleryState() {
 		get filterParticipants() {
 			return filterParticipants;
 		},
-		get filterTypes() {
-			return filterTypes;
+		get hiddenCategories() {
+			return hiddenCategories;
+		},
+		get categoryCounts() {
+			return categoryCounts;
 		},
 		get hasActiveFilter() {
 			return hasActiveFilter;
@@ -340,7 +382,7 @@ function createGalleryState() {
 		getItemCountForDate,
 		getMediaTypesForDate,
 		toggleParticipantFilter,
-		toggleTypeFilter,
+		toggleCategory,
 		clearFilters,
 	};
 }

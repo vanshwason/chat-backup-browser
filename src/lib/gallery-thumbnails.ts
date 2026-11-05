@@ -16,27 +16,130 @@ const thumbnailUrlCache = new Map<string, string>();
 const thumbnailPromiseCache = new Map<string, Promise<string | null>>();
 const thumbnailAccessOrder: string[] = []; // Track access order for LRU eviction
 
+interface QueuedWork {
+	run: () => void;
+	/** Lower runs first, e.g. distance from the middle of the screen */
+	priority?: () => number;
+}
+
+export interface WorkOptions {
+	/** Aborting drops the work if it hasn't started */
+	signal?: AbortSignal;
+	priority?: () => number;
+}
+
 let inFlight = 0;
-const queue: Array<() => void> = [];
+let paused = false;
+const queue: QueuedWork[] = [];
 
-function runLimited<T>(fn: () => Promise<T>): Promise<T> {
-	return new Promise((resolve, reject) => {
-		const run = () => {
-			inFlight++;
-			fn()
-				.then(resolve, reject)
-				.finally(() => {
-					inFlight--;
-					queue.shift()?.();
-				});
-		};
-
-		if (inFlight < MAX_CONCURRENT_THUMBNAILS) {
-			run();
-		} else {
-			queue.push(run);
+function startQueuedWork(): void {
+	while (!paused && inFlight < MAX_CONCURRENT_THUMBNAILS && queue.length) {
+		// Ties go to the newest request: it belongs to what is on screen now
+		let best = queue.length - 1;
+		let bestPriority = queue[best].priority?.() ?? 0;
+		for (let i = best - 1; i >= 0; i--) {
+			const priority = queue[i].priority?.() ?? 0;
+			if (priority < bestPriority) {
+				best = i;
+				bestPriority = priority;
+			}
 		}
+		queue.splice(best, 1)[0].run();
+	}
+}
+
+/**
+ * Holds back new media work (gallery tiles, chat bubbles) during a fast
+ * swipe, like a game streaming in only what is in view: when the swipe slows
+ * or stops, work for what sits nearest the middle of the screen starts first.
+ */
+export function setMediaLoadingPaused(value: boolean): void {
+	if (paused === value) return;
+	paused = value;
+	startQueuedWork();
+}
+
+// A scroll faster than this counts as a fling; loads wait for it to settle
+const FAST_SCROLL_PX_PER_MS = 2;
+const SCROLL_SETTLE_MS = 150;
+
+/**
+ * Returns a scroll handler for a list of media: it pauses new loads while the
+ * list is flung and resumes them once it slows down or stops.
+ */
+export function createFlingDetector(getElement: () => HTMLElement | null): {
+	onScroll: () => void;
+	stop: () => void;
+} {
+	let lastTop = 0;
+	let lastTime = 0;
+	let settleTimer: ReturnType<typeof setTimeout> | undefined;
+	return {
+		onScroll() {
+			const el = getElement();
+			if (!el) return;
+			const now = performance.now();
+			const speed =
+				Math.abs(el.scrollTop - lastTop) / Math.max(1, now - lastTime);
+			lastTop = el.scrollTop;
+			lastTime = now;
+			setMediaLoadingPaused(speed > FAST_SCROLL_PX_PER_MS);
+			clearTimeout(settleTimer);
+			settleTimer = setTimeout(
+				() => setMediaLoadingPaused(false),
+				SCROLL_SETTLE_MS,
+			);
+		},
+		stop() {
+			clearTimeout(settleTimer);
+			setMediaLoadingPaused(false);
+		},
+	};
+}
+
+/**
+ * Runs gallery work (thumbnails, durations, previews) a few at a time, best
+ * priority first. Work aborted while waiting never runs, so swiping through
+ * hundreds of tiles doesn't leave the visible ones queued behind them.
+ */
+export function runLimited<T>(
+	fn: () => Promise<T>,
+	options: WorkOptions = {},
+): Promise<T> {
+	const { signal, priority } = options;
+	return new Promise((resolve, reject) => {
+		const aborted = () => reject(new DOMException('Aborted', 'AbortError'));
+		if (signal?.aborted) {
+			aborted();
+			return;
+		}
+		const work: QueuedWork = {
+			priority,
+			run: () => {
+				signal?.removeEventListener('abort', onAbort);
+				inFlight++;
+				fn()
+					.then(resolve, reject)
+					.finally(() => {
+						inFlight--;
+						startQueuedWork();
+					});
+			},
+		};
+		const onAbort = () => {
+			const index = queue.indexOf(work);
+			if (index === -1) return;
+			queue.splice(index, 1);
+			aborted();
+		};
+		signal?.addEventListener('abort', onAbort, { once: true });
+		queue.push(work);
+		startQueuedWork();
 	});
+}
+
+export function isAbortError(error: unknown): boolean {
+	return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function evictOldestThumbnails(): void {
@@ -93,7 +196,7 @@ async function canvasToBlob(
 
 export async function getImageThumbnailUrl(
 	media: MediaFile,
-	options?: { maxSize?: number; quality?: number },
+	options?: { maxSize?: number; quality?: number } & WorkOptions,
 ): Promise<string | null> {
 	if (media.type !== 'image') return null;
 	if (!media._zipEntry) return null;
@@ -220,9 +323,11 @@ export async function getImageThumbnailUrl(
 		} finally {
 			thumbnailPromiseCache.delete(key);
 		}
-	});
+	}, options);
 
 	thumbnailPromiseCache.set(key, promise);
+	// An aborted wait leaves nothing cached, so the next request starts over
+	promise.catch(() => thumbnailPromiseCache.delete(key));
 	return promise;
 }
 

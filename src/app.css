@@ -582,6 +582,23 @@ body {
 	display: inline;
 	font-size: 11px;
 }
+/* Off-screen date sections skip layout and paint, so long galleries scroll
+   smoothly. Containment clips overflow, hence the section's own bleed. */
+.wa-media-section {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 600px;
+}
+
+/* Phone: filter checkboxes scroll sideways in one row */
+.mobile-wa .wa-media-filters {
+	flex-wrap: nowrap;
+	overflow-x: auto;
+	margin-left: -12px;
+	margin-right: -12px;
+	padding-left: 12px;
+	padding-right: 12px;
+}
+
 /* Media grid: tight 3-column squares like WhatsApp */
 .mobile-wa .wa-media-grid {
 	grid-template-columns: repeat(3, minmax(0, 1fr));

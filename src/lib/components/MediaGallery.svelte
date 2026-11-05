@@ -4,9 +4,13 @@ import { onDestroy, tick } from 'svelte';
 import {
 	type DateKey,
 	galleryState,
-	type MediaTypeFilter,
+	MEDIA_CATEGORIES,
+	type MediaCategory,
 } from '$lib/gallery.svelte';
-import { cleanupThumbnailUrls } from '$lib/gallery-thumbnails';
+import {
+	cleanupThumbnailUrls,
+	createFlingDetector,
+} from '$lib/gallery-thumbnails';
 import * as m from '$lib/paraglide/messages';
 import { getLocale } from '$lib/paraglide/runtime';
 import { appState } from '$lib/state.svelte';
@@ -37,7 +41,14 @@ const selectedCount = $derived.by(() => galleryState.selectedCount);
 const scrollToDateKey = $derived.by(() => galleryState.scrollToDateKey);
 const hasActiveFilter = $derived.by(() => galleryState.hasActiveFilter);
 const filterParticipants = $derived.by(() => galleryState.filterParticipants);
-const filterTypes = $derived.by(() => galleryState.filterTypes);
+const hiddenCategories = $derived.by(() => galleryState.hiddenCategories);
+const categoryCounts = $derived.by(() => galleryState.categoryCounts);
+const categoryLabels: Record<MediaCategory, () => string> = {
+	media: m.media_filter_photos_videos,
+	voice: m.media_filter_voice,
+	sticker: m.media_filter_stickers,
+	document: m.media_filter_documents,
+};
 const mediaParticipants = $derived.by(() => galleryState.mediaParticipants);
 
 let isDownloading = $state(false);
@@ -57,11 +68,12 @@ let showParticipantFilter = $state(false);
 let participantSearchQuery = $state('');
 let participantSearchInputRef = $state<HTMLInputElement | null>(null);
 
-// Type filter modal state
-let showTypeFilter = $state(false);
-
 // Scroll container ref
 let scrollContainerRef = $state<HTMLElement | null>(null);
+
+// No new media loads start while the user flings the list; they resume,
+// nearest the middle first, once it slows down or stops
+const fling = createFlingDetector(() => scrollContainerRef);
 
 // Auto-focus participant search input when modal opens and reset query when closing
 $effect(() => {
@@ -85,7 +97,6 @@ const filteredMediaParticipants = $derived.by(() => {
 
 // Performance optimization: Use Sets for O(1) lookups instead of O(n) includes
 const filterParticipantsSet = $derived(new Set(filterParticipants));
-const filterTypesSet = $derived(new Set(filterTypes));
 
 // Progressive rendering: big chats have thousands of media items, and mounting
 // them all at once freezes the page. Render whole date sections until the
@@ -234,8 +245,6 @@ function handleKeydown(e: KeyboardEvent) {
 			showOptionsDropdown = false;
 		} else if (showParticipantFilter) {
 			showParticipantFilter = false;
-		} else if (showTypeFilter) {
-			showTypeFilter = false;
 		} else if (showDatePicker) {
 			showDatePicker = false;
 		} else if (!galleryState.lightboxMediaPath) {
@@ -412,20 +421,12 @@ function openParticipantFilter() {
 	showParticipantFilter = true;
 }
 
-function openTypeFilter() {
-	showOptionsDropdown = false;
-	showTypeFilter = true;
-}
-
 function toggleParticipant(participant: string) {
 	galleryState.toggleParticipantFilter(participant);
 }
 
-function toggleType(type: MediaTypeFilter) {
-	galleryState.toggleTypeFilter(type);
-}
-
 onDestroy(() => {
+	fling.stop();
 	cleanupThumbnailUrls();
 });
 </script>
@@ -503,6 +504,29 @@ onDestroy(() => {
 				</IconButton>
 			</div>
 		</div>
+		{#if allItems.length > 0}
+			<div class="wa-media-filters mt-2 flex flex-wrap gap-2" role="group" aria-label={m.media_filter_label()}>
+				{#each MEDIA_CATEGORIES as category (category)}
+					{#if categoryCounts[category] > 0}
+						{@const shown = !hiddenCategories.has(category)}
+						<label
+							class="flex-shrink-0 inline-flex items-center gap-1.5 h-8 pl-2 pr-3 rounded-full border text-xs cursor-pointer select-none transition-colors {shown
+								? 'border-[var(--color-whatsapp-teal)]/40 bg-[var(--color-whatsapp-teal)]/10 text-gray-800 dark:text-gray-100'
+								: 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'}"
+						>
+							<input
+								type="checkbox"
+								class="w-4 h-4 accent-[var(--color-whatsapp-teal)]"
+								checked={shown}
+								onchange={() => galleryState.toggleCategory(category)}
+							/>
+							<span>{categoryLabels[category]()}</span>
+							<span class="tabular-nums text-gray-500 dark:text-gray-400">{categoryCounts[category]}</span>
+						</label>
+					{/if}
+				{/each}
+			</div>
+		{/if}
 		{#if downloadError}
 			<div class="mt-2 text-xs text-red-600 dark:text-red-400">
 				{m.media_gallery_download_failed()}: {downloadError}
@@ -510,7 +534,7 @@ onDestroy(() => {
 		{/if}
 	</div>
 
-	<div class="flex-1 overflow-y-auto p-3" bind:this={scrollContainerRef}>
+	<div class="flex-1 overflow-y-auto p-3" bind:this={scrollContainerRef} onscroll={fling.onScroll}>
 		{#if items.length === 0}
 			<div class="flex flex-col items-center justify-center h-full px-4 py-8 text-center">
 				<Icon name="image" size="2xl" class="text-gray-300 dark:text-gray-600 mb-3" />
@@ -520,7 +544,7 @@ onDestroy(() => {
 			<!-- Date-grouped sections -->
 			{#each visibleDateKeys as dateKey (dateKey)}
 				{@const dateItems = itemsByDate.map.get(dateKey) ?? []}
-				<section data-date={dateKey} class="mb-4">
+				<section data-date={dateKey} class="wa-media-section -mx-3 px-3 mb-4">
 					<!-- Sticky date header -->
 					<div class="sticky -top-3 z-10 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm -mx-3 px-3 py-2 mb-2 border-b border-gray-100 dark:border-gray-700/50 flex items-center gap-2">
 						<span class="text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -665,13 +689,6 @@ onDestroy(() => {
 					<span class="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{filterParticipants.length}</span>
 				{/if}
 			</ListItemButton>
-			<ListItemButton onclick={openTypeFilter} active={filterTypes.length > 0}>
-				<Icon name="tag" size="sm" />
-				<span class="flex-1">{m.media_gallery_filter_by_type()}</span>
-				{#if filterTypes.length > 0}
-					<span class="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{filterTypes.length}</span>
-				{/if}
-			</ListItemButton>
 			{#if hasActiveFilter}
 				<div class="border-t border-gray-200 dark:border-gray-700 my-1"></div>
 				<ListItemButton onclick={() => { galleryState.clearFilters(); showOptionsDropdown = false; }} danger>
@@ -735,70 +752,4 @@ onDestroy(() => {
 		</div>
 	{/if}
 
-	<!-- Type Filter Modal -->
-	{#if showTypeFilter}
-		<div class="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-			<button
-				type="button"
-				class="absolute inset-0 cursor-default"
-				onclick={() => (showTypeFilter = false)}
-				aria-label={m.close()}
-			></button>
-			<div
-				class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 w-full max-w-sm overflow-hidden"
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby="media-type-filter-title"
-			>
-				<div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-					<h3 id="media-type-filter-title" class="text-sm font-semibold text-gray-900 dark:text-gray-100">{m.media_gallery_filter_by_type()}</h3>
-					<IconButton
-						theme="light"
-						size="sm"
-						onclick={() => (showTypeFilter = false)}
-						aria-label={m.close()}
-					>
-						<Icon name="close" size="md" />
-					</IconButton>
-				</div>
-				<div class="py-2">
-					<ListItemButton
-						onclick={() => toggleType('image')}
-						active={filterTypesSet.has('image')}
-					>
-						<span class="w-5 text-center">{filterTypesSet.has('image') ? '✓' : ''}</span>
-						<span>{m.media_gallery_type_images()}</span>
-					</ListItemButton>
-					<ListItemButton
-						onclick={() => toggleType('video')}
-						active={filterTypesSet.has('video')}
-					>
-						<span class="w-5 text-center">{filterTypesSet.has('video') ? '✓' : ''}</span>
-						<span>{m.media_gallery_type_videos()}</span>
-					</ListItemButton>
-					<ListItemButton
-						onclick={() => toggleType('audio')}
-						active={filterTypesSet.has('audio')}
-					>
-						<span class="w-5 text-center">{filterTypesSet.has('audio') ? '✓' : ''}</span>
-						<span>{m.media_gallery_type_audio()}</span>
-					</ListItemButton>
-					<ListItemButton
-						onclick={() => toggleType('document')}
-						active={filterTypesSet.has('document')}
-					>
-						<span class="w-5 text-center">{filterTypesSet.has('document') ? '✓' : ''}</span>
-						<span>{m.media_gallery_type_documents()}</span>
-					</ListItemButton>
-					<ListItemButton
-						onclick={() => toggleType('other')}
-						active={filterTypesSet.has('other')}
-					>
-						<span class="w-5 text-center">{filterTypesSet.has('other') ? '✓' : ''}</span>
-						<span>{m.media_gallery_type_other()}</span>
-					</ListItemButton>
-				</div>
-			</div>
-		</div>
-	{/if}
 </div>

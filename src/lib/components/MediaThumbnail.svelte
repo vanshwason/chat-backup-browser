@@ -1,7 +1,12 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte';
 import type { GalleryItem } from '$lib/gallery.svelte';
-import { getImageThumbnailUrl } from '$lib/gallery-thumbnails';
+import {
+	getImageThumbnailUrl,
+	isAbortError,
+	runLimited,
+	type WorkOptions,
+} from '$lib/gallery-thumbnails';
 import {
 	formatFileSize,
 	getDocumentColor,
@@ -46,6 +51,10 @@ let videoPreviewEl = $state<HTMLElement | null>(null);
 let audioDuration = $state<number | null>(null);
 
 let observer: IntersectionObserver | null = null;
+// Whether the tile is on or near the screen; queued work is cancelled when
+// it scrolls away and requested again when it comes back
+let isVisible = $state(false);
+let pendingWork: AbortController | null = null;
 
 function mediaIconPath(type: GalleryItem['type']): string {
 	// Heroicons-ish, but inlined for consistency with existing components.
@@ -65,26 +74,53 @@ async function ensureThumbnail(): Promise<void> {
 
 	isLoadingThumb = true;
 	try {
-		thumbnailUrl = await getImageThumbnailUrl(item.media);
+		thumbnailUrl = await getImageThumbnailUrl(item.media, workOptions());
+	} catch (err) {
+		if (!isAbortError(err)) console.error('Failed to create thumbnail:', err);
 	} finally {
 		isLoadingThumb = false;
 	}
+}
+
+/** Cancelled when the tile scrolls away; tiles nearer the middle go first */
+function workOptions(): WorkOptions {
+	pendingWork ??= new AbortController();
+	return { signal: pendingWork.signal, priority: distanceFromCenter };
+}
+
+function distanceFromCenter(): number {
+	if (!rootEl) return Number.POSITIVE_INFINITY;
+	const rect = rootEl.getBoundingClientRect();
+	return Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2);
 }
 
 async function ensureVideoThumbnail(): Promise<void> {
 	if (videoThumbnailUrl || isLoadingThumb) return;
 	if (item.type !== 'video') return;
 	if (item.media.remoteUrl) {
-		remoteVideoSrc = `${item.media.remoteUrl}#t=0.1`;
+		// The preview streams from the laptop, so it waits its turn too
+		isLoadingThumb = true;
+		try {
+			await runLimited(async () => {}, workOptions());
+			remoteVideoSrc = `${item.media.remoteUrl}#t=0.1`;
+		} catch (err) {
+			if (!isAbortError(err)) throw err;
+		} finally {
+			isLoadingThumb = false;
+		}
 		return;
 	}
 
 	isLoadingThumb = true;
 	try {
-		const blob = item.media.blob || (await loadMediaBlob());
-		videoThumbnailUrl = await extractVideoThumbnail(blob);
+		videoThumbnailUrl = await runLimited(async () => {
+			const blob = item.media.blob || (await loadMediaBlob());
+			return extractVideoThumbnail(blob);
+		}, workOptions());
 	} catch (err) {
-		console.error('Failed to extract video thumbnail:', err);
+		if (!isAbortError(err)) {
+			console.error('Failed to extract video thumbnail:', err);
+		}
 	} finally {
 		isLoadingThumb = false;
 	}
@@ -96,10 +132,17 @@ async function ensureAudioDuration(): Promise<void> {
 
 	isLoadingThumb = true;
 	try {
-		const blob = item.media.blob || (await loadMediaBlob());
-		audioDuration = await extractAudioDuration(blob);
+		audioDuration = await runLimited(async () => {
+			if (item.media.remoteUrl) {
+				return extractAudioDuration(item.media.remoteUrl);
+			}
+			const blob = item.media.blob || (await loadMediaBlob());
+			return extractAudioDuration(blob);
+		}, workOptions());
 	} catch (err) {
-		console.error('Failed to extract audio duration:', err);
+		if (!isAbortError(err)) {
+			console.error('Failed to extract audio duration:', err);
+		}
 	} finally {
 		isLoadingThumb = false;
 	}
@@ -190,19 +233,20 @@ onMount(() => {
 
 	observer = new IntersectionObserver(
 		(entries) => {
-			for (const entry of entries) {
-				if (!entry.isIntersecting) continue;
-				if (item.type === 'image') {
-					ensureThumbnail();
-				} else if (item.type === 'video') {
-					ensureVideoThumbnail();
-				} else if (item.type === 'audio') {
-					ensureAudioDuration();
-				}
-				if (observer) {
-					observer.disconnect();
-					observer = null;
-				}
+			const entry = entries.at(-1);
+			if (!entry) return;
+			isVisible = entry.isIntersecting;
+			if (!isVisible) {
+				pendingWork?.abort();
+				pendingWork = null;
+				return;
+			}
+			if (item.type === 'image') {
+				ensureThumbnail();
+			} else if (item.type === 'video') {
+				ensureVideoThumbnail();
+			} else if (item.type === 'audio') {
+				ensureAudioDuration();
 			}
 		},
 		{ root: null, rootMargin: '200px' },
@@ -212,6 +256,7 @@ onMount(() => {
 });
 
 onDestroy(() => {
+	pendingWork?.abort();
 	if (observer) {
 		observer.disconnect();
 		observer = null;
@@ -266,7 +311,7 @@ onDestroy(() => {
 					style:width="{(videoFrameCache.frameCount > 1 ? currentFrameIndex / (videoFrameCache.frameCount - 1) : 1) * 100}%"
 				></div>
 			</div>
-		{:else if item.type === 'video' && remoteVideoSrc}
+		{:else if item.type === 'video' && remoteVideoSrc && isVisible}
 			<video
 				src={remoteVideoSrc}
 				preload="metadata"

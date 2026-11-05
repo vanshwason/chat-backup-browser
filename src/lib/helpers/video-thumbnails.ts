@@ -311,21 +311,31 @@ export async function extractVideoThumbnail(
  * @param audioBlob The audio file as a Blob
  * @returns Promise with duration in seconds
  */
-export async function extractAudioDuration(audioBlob: Blob): Promise<number> {
+export async function extractAudioDuration(
+	source: Blob | string,
+): Promise<number> {
 	return new Promise((resolve, reject) => {
 		const audio = document.createElement('audio');
-		const objectUrl = URL.createObjectURL(audioBlob);
+		// A URL (media streamed from the laptop server) lets the browser read
+		// just enough of the file for its length instead of downloading it all
+		const objectUrl =
+			typeof source === 'string' ? null : URL.createObjectURL(source);
 
-		audio.src = objectUrl;
+		audio.src = objectUrl ?? (source as string);
 		audio.preload = 'metadata';
 
+		const done = () => {
+			if (objectUrl) URL.revokeObjectURL(objectUrl);
+		};
+
 		audio.addEventListener('loadedmetadata', () => {
-			URL.revokeObjectURL(objectUrl);
-			resolve(audio.duration);
+			const duration = audio.duration;
+			done();
+			resolve(duration);
 		});
 
 		audio.addEventListener('error', () => {
-			URL.revokeObjectURL(objectUrl);
+			done();
 			reject(new Error('Failed to load audio'));
 		});
 
