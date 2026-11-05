@@ -1,3 +1,11 @@
+# [1.1.0](https://github.com/vanshwason/chat-backup-browser/compare/v1.0.2...v1.1.0) (2026-11-05)
+
+
+### Features
+
+* **chat:** load media automatically, and keep chat settings after a restart ([3fc8394](https://github.com/vanshwason/chat-backup-browser/commit/3fc83942e0cf4f661777dd89a4d690cb45444a2a))
+* **media:** filter the gallery by type, browse media in the viewer, and save files ([9c069bf](https://github.com/vanshwason/chat-backup-browser/commit/9c069bfda0d4751823324849d3483d9e9abe67b3))
+
 ## [1.0.2](https://github.com/vanshwason/chat-backup-browser/compare/v1.0.1...v1.0.2) (2026-11-02)
 
 
