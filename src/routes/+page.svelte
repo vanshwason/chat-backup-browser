@@ -74,6 +74,7 @@ import {
 	isElectronPathReference,
 	type PersistedChatMetadata,
 	restoreChat,
+	SETTINGS_VERSION,
 	saveOpenChatIds,
 	savePersistedChat,
 	storeFileHandle,
@@ -623,10 +624,12 @@ function handleRemoveChat(index: number) {
 
 function handleLanguageChange(archiveId: string, language: string) {
 	pageState.setLanguage(archiveId, language);
+	persistChatSettings(archiveId);
 }
 
 function handleAutoLoadMediaChange(archiveId: string, enabled: boolean) {
 	pageState.setAutoLoadMedia(archiveId, enabled);
+	persistChatSettings(archiveId);
 }
 
 function handleSearchInput(value: string) {
@@ -692,9 +695,30 @@ async function handleNavigateToBookmark(messageId: string, archiveId: string) {
 	scrollToMessageId = messageId;
 }
 
+/**
+ * Writes a remembered chat's settings to its saved copy, so a choice made
+ * after it was first saved survives a restart.
+ */
+function persistChatSettings(archiveId: string) {
+	if (!pageState.isRemembered(archiveId)) return;
+	const id = pageState.getFileReference(archiveId)?.persistedId ?? archiveId;
+	updatePersistedChat(id, {
+		settings: {
+			language: pageState.getLanguage(archiveId),
+			autoLoadMedia: pageState.getAutoLoadMedia(archiveId),
+			perspective: pageState.getPerspective(archiveId),
+			version: SETTINGS_VERSION,
+		},
+	}).catch(() => {
+		// Not saved under that id: the next full save stores the settings
+	});
+}
+
 function selectPerspective(participant: string | null) {
 	if (appState.selectedChat) {
-		pageState.setPerspective(appState.selectedChat.archiveId, participant);
+		const { archiveId } = appState.selectedChat;
+		pageState.setPerspective(archiveId, participant);
+		persistChatSettings(archiveId);
 	}
 	showPerspectiveDropdown = false;
 	showChatOptionsDropdown = false;
@@ -1007,7 +1031,12 @@ async function loadChatFromSource(
 						) {
 							pageState.setLanguage(chatData.archiveId, settings.language);
 						}
-						if (settings.autoLoadMedia !== undefined) {
+						// Saves older than version 2 hold the old default (off)
+						if (
+							settings.autoLoadMedia === true ||
+							(settings.autoLoadMedia === false &&
+								(settings.version ?? 1) >= SETTINGS_VERSION)
+						) {
 							pageState.setAutoLoadMedia(
 								chatData.archiveId,
 								settings.autoLoadMedia,
@@ -1088,6 +1117,7 @@ async function rememberChat(
 				language: pageState.getLanguage(archiveId),
 				autoLoadMedia: pageState.getAutoLoadMedia(archiveId),
 				perspective: pageState.getPerspective(archiveId),
+				version: SETTINGS_VERSION,
 			},
 			fileRef?.filePath,
 			fileHandle,

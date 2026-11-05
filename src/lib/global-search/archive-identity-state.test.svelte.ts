@@ -77,8 +77,8 @@ describe('archive page state is keyed by archiveId, not title', () => {
 		state.setLanguage(second.archiveId, 'spanish');
 		state.setPerspective(first.archiveId, 'Ana');
 		state.setPerspective(second.archiveId, 'Bruno');
-		state.setAutoLoadMedia(first.archiveId, true);
-		state.setAutoLoadMedia(second.archiveId, true);
+		state.setAutoLoadMedia(first.archiveId, false);
+		state.setAutoLoadMedia(second.archiveId, false);
 		state.addRemembered(first.archiveId);
 		state.addRemembered(second.archiveId);
 		state.setFileReference(first.archiveId, {
@@ -95,14 +95,14 @@ describe('archive page state is keyed by archiveId, not title', () => {
 		// First archive falls back to defaults.
 		expect(state.getLanguage(first.archiveId)).toBe(DEFAULT_LANGUAGE);
 		expect(state.getPerspective(first.archiveId)).toBeNull();
-		expect(state.getAutoLoadMedia(first.archiveId)).toBe(false);
+		expect(state.getAutoLoadMedia(first.archiveId)).toBe(true);
 		expect(state.isRemembered(first.archiveId)).toBe(false);
 		expect(state.getFileReference(first.archiveId)).toBeUndefined();
 
 		// Second archive is untouched.
 		expect(state.getLanguage(second.archiveId)).toBe('spanish');
 		expect(state.getPerspective(second.archiveId)).toBe('Bruno');
-		expect(state.getAutoLoadMedia(second.archiveId)).toBe(true);
+		expect(state.getAutoLoadMedia(second.archiveId)).toBe(false);
 		expect(state.isRemembered(second.archiveId)).toBe(true);
 		expect(state.getFileReference(second.archiveId)).toEqual({
 			file: null,

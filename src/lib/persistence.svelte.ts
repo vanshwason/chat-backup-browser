@@ -52,8 +52,16 @@ export interface PersistedChatMetadata {
 		language: string;
 		autoLoadMedia: boolean;
 		perspective: string | null;
+		/** Missing before auto-load became the default (see SETTINGS_VERSION) */
+		version?: number;
 	};
 }
+
+/**
+ * Version 2: media auto-load defaults to on. Older saves stored the old
+ * default (off) for every chat, so their autoLoadMedia false is ignored.
+ */
+export const SETTINGS_VERSION = 2;
 
 interface ValidationResult {
 	valid: boolean;
@@ -161,11 +169,7 @@ export async function savePersistedChat(
 	file: File | null,
 	bookmarks: Bookmark[],
 	transcriptions: Record<string, string>,
-	settings: {
-		language: string;
-		autoLoadMedia: boolean;
-		perspective: string | null;
-	},
+	settings: PersistedChatMetadata['settings'],
 	filePath?: string, // For Electron
 	fileHandle?: FileSystemFileHandle, // For web with File System Access API
 ): Promise<string> {

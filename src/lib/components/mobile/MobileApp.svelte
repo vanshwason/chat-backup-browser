@@ -1,4 +1,5 @@
 <script lang="ts">
+import { get, set } from 'idb-keyval';
 import { onMount, tick } from 'svelte';
 import { fly } from 'svelte/transition';
 import { bookmarksState } from '$lib/bookmarks.svelte';
@@ -86,7 +87,15 @@ const likelyMe = $derived.by(() => {
 // would be lost on every reload. A stored null means "None" was picked.
 const VIEW_AS_KEY = 'wa-mobile-view-as';
 
-function loadViewAsChoices(): Record<string, string | null> {
+// Kept in IndexedDB: the desktop app can lose localStorage when it quits.
+// Choices from older versions are still read from localStorage.
+async function loadViewAsChoices(): Promise<Record<string, string | null>> {
+	try {
+		const stored = await get<Record<string, string | null>>(VIEW_AS_KEY);
+		if (stored) return stored;
+	} catch {
+		// IndexedDB unavailable: fall back to localStorage below
+	}
 	try {
 		return JSON.parse(localStorage.getItem(VIEW_AS_KEY) ?? '{}');
 	} catch {
@@ -94,11 +103,11 @@ function loadViewAsChoices(): Record<string, string | null> {
 	}
 }
 
-function saveViewAsChoice(archiveId: string, participant: string | null) {
+async function saveViewAsChoice(archiveId: string, participant: string | null) {
 	try {
-		const choices = loadViewAsChoices();
+		const choices = await loadViewAsChoices();
 		choices[archiveId] = participant;
-		localStorage.setItem(VIEW_AS_KEY, JSON.stringify(choices));
+		await set(VIEW_AS_KEY, choices);
 	} catch {
 		// Storage unavailable (private mode): the choice lasts this visit only
 	}
@@ -106,7 +115,7 @@ function saveViewAsChoice(archiveId: string, participant: string | null) {
 
 /** Sets who "I" am in the open chat and remembers it for next time. */
 function choosePerspective(participant: string | null) {
-	if (openChat) saveViewAsChoice(openChat.archiveId, participant);
+	if (openChat) void saveViewAsChoice(openChat.archiveId, participant);
 	onSelectPerspective(participant);
 	showViewAsPrompt = false;
 }
@@ -244,7 +253,9 @@ async function openChatScreen(chat: ChatData) {
 
 	await tick();
 	// Restore the remembered "view as" choice, or ask on the first open
-	const choices = loadViewAsChoices();
+	const choices = await loadViewAsChoices();
+	// Another chat may have been opened while the choices loaded
+	if (openArchiveId !== chat.archiveId) return;
 	if (chat.archiveId in choices) {
 		const saved = choices[chat.archiveId];
 		if (saved === null || chat.participants.includes(saved)) {
@@ -254,7 +265,7 @@ async function openChatScreen(chat: ChatData) {
 	}
 	if (currentPerspective !== null) {
 		// Restored from an imported chat's saved settings
-		saveViewAsChoice(chat.archiveId, currentPerspective);
+		void saveViewAsChoice(chat.archiveId, currentPerspective);
 		return;
 	}
 	if (chat.participants.length > 0) showViewAsPrompt = true;

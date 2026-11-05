@@ -78,7 +78,7 @@ export function createArchivePageState(): ArchivePageState {
 	}
 
 	function getAutoLoadMedia(archiveId: string): boolean {
-		return autoLoadMediaByArchive.get(archiveId) ?? false;
+		return autoLoadMediaByArchive.get(archiveId) ?? true;
 	}
 
 	function setAutoLoadMedia(archiveId: string, enabled: boolean): void {

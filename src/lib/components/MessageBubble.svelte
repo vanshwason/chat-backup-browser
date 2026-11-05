@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { Bookmark } from '$lib/bookmarks.svelte';
 import { bookmarksState } from '$lib/bookmarks.svelte';
+import { isAbortError, runLimited } from '$lib/gallery-thumbnails';
 import {
 	isMobileViewport,
 	MOBILE_MEDIA_LOAD_DELAY,
@@ -115,19 +116,41 @@ $effect(() => {
 	)
 		return;
 
+	// Queued with the gallery's loads: nothing new starts during a fast swipe,
+	// bubbles nearest the middle of the screen go first, and a bubble scrolled
+	// away before its turn is dropped (and queued again if it comes back)
+	const el = containerRef;
+	let pending: AbortController | null = null;
+	const distanceFromCenter = () => {
+		const rect = el.getBoundingClientRect();
+		return Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2);
+	};
 	const observer = new IntersectionObserver(
 		(entries) => {
-			if (entries[0]?.isIntersecting) {
-				loadMedia();
-				observer.disconnect();
+			if (!entries.at(-1)?.isIntersecting) {
+				pending?.abort();
+				pending = null;
+				return;
 			}
+			if (pending) return;
+			const controller = new AbortController();
+			pending = controller;
+			runLimited(loadMedia, {
+				signal: controller.signal,
+				priority: distanceFromCenter,
+			}).catch((err) => {
+				if (!isAbortError(err)) console.error(err);
+			});
 		},
 		{ rootMargin: '200px' }, // Start loading slightly before visible
 	);
 
-	observer.observe(containerRef);
+	observer.observe(el);
 
-	return () => observer.disconnect();
+	return () => {
+		pending?.abort();
+		observer.disconnect();
+	};
 });
 
 // Auto-load media when highlighted on mobile (e.g., navigating from gallery)
@@ -611,8 +634,8 @@ async function transcribeVoiceMessage() {
 								<span class="text-sm">{message.mediaFile?.name || 'Download'}</span>
 							</a>
 						{/if}
-					{:else if mediaLoading}
-						<!-- Loading state -->
+					{:else if mediaLoading || (autoLoadMedia && !mediaError)}
+						<!-- Loading state (auto-load also shows it while queued) -->
 						<div class="flex items-center gap-2 text-gray-500 dark:text-gray-400 py-2">
 							<div class="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-[var(--color-whatsapp-teal)]"></div>
 							<span class="text-sm">Loading...</span>

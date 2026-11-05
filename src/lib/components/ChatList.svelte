@@ -111,7 +111,8 @@ function getLanguageName(code: string): string {
 }
 
 function isAutoLoadEnabled(archiveId: string): boolean {
-	return autoLoadMediaByChat.get(archiveId) || false;
+	// Matches the page state default: media auto-loads unless turned off
+	return autoLoadMediaByChat.get(archiveId) ?? true;
 }
 
 function handleAutoLoadToggle() {

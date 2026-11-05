@@ -1,6 +1,7 @@
 <script lang="ts">
 import { onDestroy, tick, untrack } from 'svelte';
 import { bookmarksState } from '$lib/bookmarks.svelte';
+import { createFlingDetector } from '$lib/gallery-thumbnails';
 import { getNextMessageIndex } from '$lib/helpers/message-list-navigation';
 import * as m from '$lib/paraglide/messages';
 import { getLocale } from '$lib/paraglide/runtime';
@@ -703,7 +704,12 @@ function handleMessageListKeydown(event: KeyboardEvent) {
 	element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
+// Media in bubbles waits while the chat is flung (see createFlingDetector)
+const fling = createFlingDetector(() => chatContainer);
+onDestroy(() => fling.stop());
+
 function handleScroll() {
+	fling.onScroll();
 	if (!isNavigationScroll && persistentHighlightId && !pendingHighlightId) {
 		persistentHighlightId = null;
 	}
