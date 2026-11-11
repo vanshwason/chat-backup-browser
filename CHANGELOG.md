@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/vanshwason/chat-backup-browser/compare/v1.1.0...v1.1.1) (2026-11-11)
+
+
+### Performance Improvements
+
+* **gallery:** keep thumbnails on the device so media reopens instantly ([40e0679](https://github.com/vanshwason/chat-backup-browser/commit/40e06797166c797c0bd425a7e1da9b7112af4d07))
+
 # [1.1.0](https://github.com/vanshwason/chat-backup-browser/compare/v1.0.2...v1.1.0) (2026-11-05)
 
 
