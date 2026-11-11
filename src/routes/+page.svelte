@@ -36,6 +36,10 @@ import ReselectFileModal from '$lib/components/ReselectFileModal.svelte';
 import RestoreSessionModal from '$lib/components/RestoreSessionModal.svelte';
 import Toast from '$lib/components/Toast.svelte';
 import { galleryState } from '$lib/gallery.svelte';
+import {
+	deleteSavedThumbnails,
+	pruneSavedRemoteThumbnails,
+} from '$lib/gallery-thumbnails';
 import { findArchiveIndex } from '$lib/global-search/archive-navigation';
 import {
 	createArchivePageState,
@@ -563,6 +567,9 @@ $effect(() => {
 
 async function loadRemoteLibrary() {
 	const library = await fetchRemoteLibrary();
+	if (library) {
+		void pruneSavedRemoteThumbnails(new Set(library.map((chat) => chat.id)));
+	}
 	if (!library || library.length === 0) return;
 	isRemoteLibrary = true;
 	await Promise.all(library.map((info) => loadRemoteChat(info)));
@@ -1145,6 +1152,10 @@ let confirmingRemoveArchiveId = $state<string | null>(null);
 
 async function forgetChat(archiveId: string) {
 	try {
+		// Saved thumbnails first: if they can't be removed, nothing is, and the
+		// failure is reported like any other
+		const chat = appState.chats.find((c) => c.archiveId === archiveId);
+		if (chat) await deleteSavedThumbnails(chat.mediaFiles);
 		// ONE unified §5 cascade shared with the global-search panel: persisted
 		// metadata + file-handle reference + global-search index/consent, each
 		// half read back and fail-closed. If the readback reports a survivor the

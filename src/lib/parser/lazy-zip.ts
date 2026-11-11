@@ -38,6 +38,7 @@ const METHOD_DEFLATE = 8;
 interface CentralEntry {
 	name: string;
 	method: number;
+	crc32: number;
 	compressedSize: number;
 	size: number;
 	localOffset: number;
@@ -144,6 +145,7 @@ function parseCentralDirectory(buffer: ArrayBuffer): CentralEntry[] {
 		const entry: CentralEntry = {
 			name: decoder.decode(bytes.subarray(nameStart, extraStart)),
 			method,
+			crc32: view.getUint32(pos + 16, true),
 			compressedSize: view.getUint32(pos + 20, true),
 			size: view.getUint32(pos + 24, true),
 			localOffset: view.getUint32(pos + 42, true),
@@ -209,8 +211,8 @@ export async function openLazyZip(
 		const lazyEntry = {
 			name: entry.name,
 			dir: entry.name.endsWith('/'),
-			// Read by zip-parser for the media size
-			_data: { uncompressedSize: entry.size },
+			// Read by zip-parser for the media size, and for saved thumbnails' keys
+			_data: { uncompressedSize: entry.size, crc32: entry.crc32 },
 			async async(type: string) {
 				const data = await readEntry(entry, read);
 				if (type === 'string' || type === 'text') {

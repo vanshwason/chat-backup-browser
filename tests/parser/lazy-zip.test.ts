@@ -37,6 +37,17 @@ describe('openLazyZip', () => {
 		},
 	);
 
+	it('exposes each entry checksum like JSZip does', async () => {
+		const { bytes, read } = await buildZip('DEFLATE');
+		const archive = await openLazyZip('a.zip', bytes.length, read);
+		const reference = await JSZip.loadAsync(bytes);
+		const crcOf = (entry: unknown) =>
+			(entry as { _data: { crc32: number } })._data.crc32;
+		expect(crcOf(archive.files['photos/IMG-1.jpg'])).toBe(
+			crcOf(reference.files['photos/IMG-1.jpg']),
+		);
+	});
+
 	it('reads only the directory until an entry is requested', async () => {
 		const { bytes, read } = await buildZip('DEFLATE');
 		const spy = vi.fn(read);
