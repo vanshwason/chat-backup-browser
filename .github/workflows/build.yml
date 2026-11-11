@@ -60,12 +60,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             platform: mac-arm64
             arch: arm64
             # Each build job writes the same update file, so arm64 gets its own channel
             publish_args: -c.publish.channel=latest-arm64
-          - os: macos-14
+          - os: macos-15
             platform: mac-x64
             arch: x64
           - os: windows-latest
