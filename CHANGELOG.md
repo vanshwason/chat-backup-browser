@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/vanshwason/chat-backup-browser/compare/v1.2.0...v1.2.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* save video thumbnails on the device, and let Back leave a chat after a jump ([f6dacab](https://github.com/vanshwason/chat-backup-browser/commit/f6dacab768ffaf21db8a931e916d124e017881c5))
+
 # [1.2.0](https://github.com/vanshwason/chat-backup-browser/compare/v1.1.1...v1.2.0) (2026-11-27)
 
 
