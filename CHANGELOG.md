@@ -1,3 +1,15 @@
+# [1.2.0](https://github.com/vanshwason/chat-backup-browser/compare/v1.1.1...v1.2.0) (2026-11-27)
+
+
+### Bug Fixes
+
+* **import:** read US iPhone exports and link media named a time zone off ([4515f2d](https://github.com/vanshwason/chat-backup-browser/commit/4515f2d00f103cdd57a4782fbf92ec99d75ef26a)), closes [#1](https://github.com/vanshwason/chat-backup-browser/issues/1)
+
+
+### Features
+
+* search all chats on phone and desktop, links and calls tabs, richer stats ([a019171](https://github.com/vanshwason/chat-backup-browser/commit/a019171ceeb7c42d83e16d9a719b86a568333322))
+
 ## [1.1.1](https://github.com/vanshwason/chat-backup-browser/compare/v1.1.0...v1.1.1) (2026-11-11)
 
 
