@@ -30,6 +30,9 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+        env:
+          # The GPU onnxruntime binary is no longer downloadable; the web build doesn't need it
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
       - name: Build
         run: npm run build
