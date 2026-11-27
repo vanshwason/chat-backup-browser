@@ -187,6 +187,9 @@ app.whenReady().then(() => {
 	// every time, starting in Downloads and then in the last folder used. The
 	// file's own name is filled in; cancelling saves nothing.
 	session.defaultSession.on('will-download', (_event, item, webContents) => {
+		// Date the renderer asked for (the message's send time), used once
+		const fileDate = pendingDownloadDate;
+		pendingDownloadDate = null;
 		const folder = lastSaveFolder ?? app.getPath('downloads');
 		const suggested = uniqueSavePath(folder, item.getFilename());
 		const ext = path.extname(suggested).slice(1);
@@ -210,6 +213,12 @@ app.whenReady().then(() => {
 		}
 		lastSaveFolder = path.dirname(chosen);
 		item.setSavePath(chosen);
+		if (fileDate) {
+			item.once('done', (_e, state) => {
+				if (state !== 'completed') return;
+				fs.promises.utimes(chosen, fileDate, fileDate).catch(() => {});
+			});
+		}
 	});
 
 	// Register protocol handler for 'app://' scheme
@@ -296,6 +305,18 @@ app.on('window-all-closed', () => {
 
 // IPC Handlers for file operations
 // Size of a ZIP, or null if it isn't there (for example moved or deleted)
+// Saved media gets the date its message was sent, so photo apps sort it right
+let pendingDownloadDate = null;
+ipcMain.on('download:nextDate', (_event, iso) => {
+	const date = typeof iso === 'string' ? new Date(iso) : null;
+	const valid =
+		date &&
+		Number.isFinite(date.getTime()) &&
+		date.getTime() > Date.UTC(2009, 0, 1) &&
+		date.getTime() < Date.now() + 86_400_000;
+	pendingDownloadDate = valid ? date : null;
+});
+
 ipcMain.handle('file:zipSize', async (_event, filePath) => {
 	const normalized = validZipPath(filePath);
 	if (!normalized) return null;

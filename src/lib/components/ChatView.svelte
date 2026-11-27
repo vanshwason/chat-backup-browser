@@ -757,9 +757,10 @@ function handleScroll() {
 	{#each renderedItems.items as item, idx (item.type === 'date' ? `date-${item.dateKey}-${idx}` : item.message.id)}
 		{#if item.type === 'date'}
 			<!-- Date separator -->
-			<div class="flex justify-center my-4">
+			<!-- Sticky: the current day's date floats at the top while scrolling -->
+			<div class="sticky top-0 z-10 flex justify-center my-4 pointer-events-none">
 				<div
-					class="bg-white/90 dark:bg-gray-800/90 text-gray-600 dark:text-gray-300 text-xs px-3 py-1 rounded-lg shadow-sm"
+					class="bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-xs px-3 py-1 rounded-lg shadow-sm"
 				>
 					{formatDateSeparator(item.dateKey)}
 				</div>

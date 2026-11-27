@@ -7,6 +7,7 @@ import {
 	inViewerOrder,
 } from '$lib/gallery.svelte';
 import { resolveLightboxItem } from '$lib/helpers/lightbox';
+import { stampMediaDate } from '$lib/helpers/media-date';
 import { isMobileViewport } from '$lib/helpers/responsive';
 import * as m from '$lib/paraglide/messages';
 import { getLocale } from '$lib/paraglide/runtime';
@@ -159,12 +160,22 @@ async function saveCurrent() {
 	isSaving = true;
 	try {
 		const url = await loadMediaFile(it.media);
+		const sent = it.messageTimestamp ? new Date(it.messageTimestamp) : null;
+		// The send date goes inside photos/videos so phone photo apps sort them right
+		const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+		const stamped = stampMediaDate(bytes, it.name, sent);
+		const saveUrl =
+			stamped === bytes
+				? url
+				: URL.createObjectURL(new Blob([stamped as BlobPart]));
+		window.electronAPI?.setNextDownloadDate?.(it.messageTimestamp ?? null);
 		const link = document.createElement('a');
-		link.href = url;
+		link.href = saveUrl;
 		link.download = it.name;
 		document.body.appendChild(link);
 		link.click();
 		link.remove();
+		if (saveUrl !== url) setTimeout(() => URL.revokeObjectURL(saveUrl), 60_000);
 	} catch (err) {
 		lightboxError = err instanceof Error ? err.message : String(err);
 	} finally {

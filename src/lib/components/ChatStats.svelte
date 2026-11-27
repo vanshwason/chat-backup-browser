@@ -6,6 +6,7 @@ import type { ChatData } from '$lib/state.svelte';
 import type { PersonStats, StatsResult } from '$lib/workers/stats-worker';
 import Icon from './Icon.svelte';
 import IconButton from './IconButton.svelte';
+import StatsCharts from './StatsCharts.svelte';
 
 interface Props {
 	chat: ChatData;
@@ -431,6 +432,8 @@ const visibleRows = $derived(
 						<span>{m.stats_hour_11pm()}</span>
 					</div>
 				</div>
+
+				<StatsCharts {stats} people={peopleColumns} />
 			{/if}
 		</div>
 	</div>

@@ -1229,7 +1229,18 @@ function handleGlobalSearchReselectSource(_archiveId: string) {
 		onAutoLoadMediaChange={handleAutoLoadMediaChange}
 		{scrollToMessageId}
 		onNavigateToMessage={handleNavigateToBookmark}
+		globalSearch={globalSearchSurfaceEnabled ? mobileGlobalSearch : undefined}
+		onOpenGlobalSearch={() => void globalSearchState.initialize()}
 	/>
+	{#snippet mobileGlobalSearch(close: () => void)}
+		<GlobalSearchPanel
+			searchState={globalSearchState}
+			senders={globalSearchSenders}
+			onNavigate={handleGlobalSearchNavigate}
+			onReselectSource={handleGlobalSearchReselectSource}
+			onClose={close}
+		/>
+	{/snippet}
 {:else}
 <div class="h-screen flex flex-col bg-gray-100 dark:bg-gray-950">
 	<!-- Electron drag region for macOS titlebar (only shown in Electron on macOS) -->
@@ -1318,9 +1329,12 @@ function handleGlobalSearchReselectSource(_archiveId: string) {
 
 								{#if appState.error}
 									<div class="mt-4 w-full p-4 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">
-										<p class="text-red-700 dark:text-red-400 text-sm text-center">
-											{appState.error}
-										</p>
+										<p class="text-red-700 dark:text-red-400 text-sm whitespace-pre-line select-text">{appState.error}</p>
+										<button
+											type="button"
+											class="mt-3 text-sm font-medium text-red-700 dark:text-red-300 underline cursor-pointer"
+											onclick={() => navigator.clipboard?.writeText(appState.error ?? '')}
+										>{m.error_copy()}</button>
 									</div>
 								{/if}
 							</div>
@@ -1803,6 +1817,7 @@ function handleGlobalSearchReselectSource(_archiveId: string) {
 						{#if galleryMounted}
 							<MediaGallery
 								onClose={() => (showMediaGallery = false)}
+								onNavigateToMessage={handleNavigateToMediaMessage}
 							/>
 						{/if}
 					</div>

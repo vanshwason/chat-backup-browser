@@ -17,12 +17,12 @@ import {
 } from './manifest';
 
 describe('GH-67 manifest key contracts', () => {
-	it('uses the V1 schema/index/normalization versions and a disabled default gate', () => {
+	it('uses the V1 schema/index/normalization versions and ships the gate on', () => {
 		expect(GLOBAL_SEARCH_SCHEMA_VERSION).toBe(1);
 		expect(GLOBAL_SEARCH_INDEX_VERSION).toBe(1);
 		expect(GLOBAL_SEARCH_NORMALIZATION_VERSION).toBe(1);
-		// The gate ships disabled; flipping it is a release decision (§8).
-		expect(GLOBAL_SEARCH_V1_ENABLED).toBe(false);
+		// Released in Chat Backup Browser; turning it off is a release decision (§8).
+		expect(GLOBAL_SEARCH_V1_ENABLED).toBe(true);
 	});
 
 	it('every key shares the exclusive whatsapp-global-search- prefix', () => {

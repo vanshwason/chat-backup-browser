@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 	// the non-standard File#path; webUtils.getPathForFile is the replacement).
 	getPathForFile: (file) => webUtils.getPathForFile(file),
 
+	// Date to stamp on the next saved file (message send time)
+	setNextDownloadDate: (iso) => ipcRenderer.send('download:nextDate', iso),
+
 	// External links
 	openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 

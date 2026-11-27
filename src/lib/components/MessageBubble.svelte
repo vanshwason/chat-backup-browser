@@ -2,6 +2,7 @@
 import type { Bookmark } from '$lib/bookmarks.svelte';
 import { bookmarksState } from '$lib/bookmarks.svelte';
 import { isAbortError, runLimited } from '$lib/gallery-thumbnails';
+import { parseCall } from '$lib/helpers/chat-calls';
 import {
 	isMobileViewport,
 	MOBILE_MEDIA_LOAD_DELAY,
@@ -59,6 +60,11 @@ let {
 	onOpenMedia,
 	onLongPress,
 }: Props = $props();
+
+// Calls render as a call card instead of plain text
+const call = $derived(
+	message.isMediaMessage ? null : parseCall(message.content),
+);
 
 // Touch long-press detection (only wired up when onLongPress is provided)
 const LONG_PRESS_MS = 500;
@@ -697,6 +703,24 @@ async function transcribeVoiceMessage() {
 						{/if}
 					</div>
 				{/if}
+			{:else if call}
+				<div class="flex items-center gap-3 py-1 pr-2">
+					<span class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 {call.missed
+						? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'
+						: 'bg-[var(--color-whatsapp-teal)]/15 text-[var(--color-whatsapp-teal)]'}">
+						<Icon name={call.video ? 'video' : 'phone'} size="sm" />
+					</span>
+					<span class="min-w-0">
+						<span class="block text-sm font-medium text-gray-800 dark:text-gray-100">
+							{call.missed
+								? call.video ? m.call_missed_video() : m.call_missed_voice()
+								: call.video ? m.call_video() : m.call_voice()}
+						</span>
+						{#if call.duration}
+							<span class="block text-xs text-gray-500 dark:text-gray-400">{call.duration}</span>
+						{/if}
+					</span>
+				</div>
 			{:else}
 				<!-- Text content -->
 				<p class="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">

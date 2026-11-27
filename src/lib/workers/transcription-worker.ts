@@ -67,6 +67,17 @@ interface TranscriptionErrorResponse {
 	error: string;
 }
 
+async function hasWebGpu(): Promise<boolean> {
+	try {
+		const gpu = (
+			navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }
+		).gpu;
+		return !!(gpu && (await gpu.requestAdapter()));
+	} catch {
+		return false;
+	}
+}
+
 /**
  * Load the Whisper model
  */
@@ -76,20 +87,48 @@ async function loadModel(): Promise<void> {
 	isLoading = true;
 
 	try {
-		// @ts-expect-error - pipeline types are complex
-		whisperPipeline = await pipeline('automatic-speech-recognition', MODEL_ID, {
-			dtype: 'q8',
-			device: 'wasm',
-			progress_callback: (progress: { progress?: number; status?: string }) => {
-				const response: ProgressResponse = {
-					type: 'progress',
-					progress:
-						progress.progress !== undefined ? Math.round(progress.progress) : 0,
-					status: progress.status,
-				};
-				self.postMessage(response);
-			},
-		});
+		const progress_callback = (progress: {
+			progress?: number;
+			status?: string;
+		}) => {
+			const response: ProgressResponse = {
+				type: 'progress',
+				progress:
+					progress.progress !== undefined ? Math.round(progress.progress) : 0,
+				status: progress.status,
+			};
+			self.postMessage(response);
+		};
+		// The GPU is much faster where it works; the CPU (WASM) runs everywhere
+		if (await hasWebGpu()) {
+			try {
+				// @ts-expect-error - pipeline types are complex
+				whisperPipeline = await pipeline(
+					'automatic-speech-recognition',
+					MODEL_ID,
+					{
+						// int8 runs poorly on WebGPU; these are the sizes its demos use
+						dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
+						device: 'webgpu',
+						progress_callback,
+					},
+				);
+			} catch (err) {
+				console.warn('[transcription] WebGPU failed, using CPU', err);
+				whisperPipeline = null;
+			}
+		}
+		if (!whisperPipeline) {
+			whisperPipeline = await pipeline(
+				'automatic-speech-recognition',
+				MODEL_ID,
+				{
+					dtype: 'q8',
+					device: 'wasm',
+					progress_callback,
+				},
+			);
+		}
 
 		// generate() drops inputs missing from this list, which would run the
 		// encoder again for audio detectLanguage() already encoded

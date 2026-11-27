@@ -74,6 +74,17 @@ function handleClear() {
 	onInput('');
 }
 
+let inputEl = $state<HTMLInputElement>();
+
+// Ctrl+K / Cmd+K jumps to search from anywhere in the chat
+function handleWindowKeydown(e: KeyboardEvent) {
+	if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+		e.preventDefault();
+		inputEl?.focus();
+		inputEl?.select();
+	}
+}
+
 onDestroy(() => {
 	if (debounceTimer) {
 		clearTimeout(debounceTimer);
@@ -81,14 +92,18 @@ onDestroy(() => {
 });
 </script>
 
+<svelte:window onkeydown={handleWindowKeydown} />
+
 <div class="relative">
 	<div class="absolute inset-y-0 left-3 flex items-center pointer-events-none">
 		<Icon name="search" class="text-gray-400" />
 	</div>
 
 	<input
+		bind:this={inputEl}
 		type="text"
 		value={localValue}
+		aria-keyshortcuts="Control+K Meta+K"
 		{placeholder}
 		class="w-full pl-10 pr-10 py-2 bg-gray-100 dark:bg-gray-800 border-0 rounded-lg text-gray-800 dark:text-gray-200 placeholder-gray-500 focus:ring-2 focus:ring-[var(--color-whatsapp-teal)] focus:outline-none transition-all"
 		oninput={handleInput}

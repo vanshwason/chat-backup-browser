@@ -1,3 +1,12 @@
+import {
+	addEmojis,
+	addWords,
+	longestStreak,
+	type Silence,
+	type Streak,
+	topN,
+} from './stats-extras';
+
 /**
  * Web Worker for computing chat statistics
  * Runs in a separate thread to prevent UI blocking
@@ -71,6 +80,12 @@ export interface StatsResult {
 	people: Record<string, PersonStats>;
 	calls: CallStats;
 	busiestDay: { date: string; count: number } | null;
+	/** Messages per weekday and hour: index = weekday (0 = Sunday) * 24 + hour */
+	weekdayHour: number[];
+	topWords: Record<string, [string, number][]>;
+	topEmojis: Record<string, [string, number][]>;
+	longestStreak: Streak | null;
+	longestSilence: Silence | null;
 }
 
 // A new "conversation" starts after this much silence
@@ -153,6 +168,10 @@ self.onmessage = (event: MessageEvent<StatsWorkerInput>) => {
 
 	let prevSender: string | null = null;
 	let prevTime = 0;
+	const weekdayHour = new Array(7 * 24).fill(0);
+	const wordCounts = new Map<string, Map<string, number>>();
+	const emojiCounts = new Map<string, Map<string, number>>();
+	let longestSilence: Silence | null = null;
 
 	for (const message of messages) {
 		if (message.isSystemMessage || !message.sender) continue;
@@ -171,6 +190,17 @@ self.onmessage = (event: MessageEvent<StatsWorkerInput>) => {
 
 		// Count by hour
 		messagesByHour[timestamp.getHours()]++;
+		weekdayHour[timestamp.getDay() * 24 + timestamp.getHours()]++;
+		if (
+			prevTime &&
+			(!longestSilence || time - prevTime > longestSilence.seconds * 1000)
+		) {
+			longestSilence = {
+				seconds: Math.round((time - prevTime) / 1000),
+				from: new Date(prevTime).toISOString(),
+				to: timestamp.toISOString(),
+			};
+		}
 
 		let person = people.get(sender);
 		if (!person) {
@@ -260,7 +290,16 @@ self.onmessage = (event: MessageEvent<StatsWorkerInput>) => {
 
 		const links = text.match(URL)?.length ?? 0;
 		person.links += links;
-		person.emojis += text.match(EMOJI)?.length ?? 0;
+		const emojis = text.match(EMOJI) ?? [];
+		person.emojis += emojis.length;
+		if (emojis.length) {
+			const map = emojiCounts.get(sender) ?? new Map<string, number>();
+			addEmojis(map, emojis);
+			emojiCounts.set(sender, map);
+		}
+		const wordMap = wordCounts.get(sender) ?? new Map<string, number>();
+		addWords(wordMap, text.replace(URL, ' ').replace(EDITED, ' '));
+		wordCounts.set(sender, wordMap);
 		const words = text
 			.replace(URL, ' ')
 			.replace(EDITED, ' ')
@@ -313,6 +352,13 @@ self.onmessage = (event: MessageEvent<StatsWorkerInput>) => {
 		people: Object.fromEntries(people),
 		calls,
 		busiestDay,
+		weekdayHour,
+		topWords: Object.fromEntries([...wordCounts].map(([p, c]) => [p, topN(c)])),
+		topEmojis: Object.fromEntries(
+			[...emojiCounts].map(([p, c]) => [p, topN(c)]),
+		),
+		longestStreak: longestStreak(messagesByDate.keys()),
+		longestSilence,
 	};
 
 	self.postMessage(result);

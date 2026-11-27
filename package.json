@@ -33,6 +33,7 @@
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
+		"stats:downloads": "node scripts/download-stats.mjs",
 		"prepare": "svelte-kit sync || echo ''",
 		"i18n:compile": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy localStorage cookie preferredLanguage baseLocale",
 		"check": "svelte-kit sync && npm run i18n:compile && svelte-check --tsconfig ./tsconfig.json",

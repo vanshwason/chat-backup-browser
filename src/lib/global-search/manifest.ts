@@ -22,15 +22,15 @@ export const GLOBAL_SEARCH_INDEX_VERSION = 1 as const;
 export const GLOBAL_SEARCH_NORMALIZATION_VERSION = 1 as const;
 
 /**
- * Build-time feature gate. Defaults to false until the feature ships; flipping
- * this to true (and rebuilding) is the only way to activate V1 persistence.
+ * Build-time feature gate. Shipped in Chat Backup Browser (on). Setting it false
+ * (and rebuilding) turns off V1 persistence and the search surface.
  * When false or unknown the lifecycle layer reads/writes nothing and clears
  * every in-flight reference — see §8 of the spec.
  *
  * Lifecycle entry points accept the gate value as a parameter so the contracts
  * are testable without monkey-patching module state.
  */
-export const GLOBAL_SEARCH_V1_ENABLED = false;
+export const GLOBAL_SEARCH_V1_ENABLED = true;
 
 export type GlobalSearchManifestState =
 	| 'staging'

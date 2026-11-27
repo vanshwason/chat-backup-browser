@@ -11,6 +11,9 @@ import {
 	cleanupThumbnailUrls,
 	createFlingDetector,
 } from '$lib/gallery-thumbnails';
+import { listCalls } from '$lib/helpers/chat-calls';
+import { groupChatLinks } from '$lib/helpers/chat-links';
+import { stampMediaDate } from '$lib/helpers/media-date';
 import * as m from '$lib/paraglide/messages';
 import { getLocale } from '$lib/paraglide/runtime';
 import { appState } from '$lib/state.svelte';
@@ -24,9 +27,30 @@ import MediaThumbnail from './MediaThumbnail.svelte';
 
 interface Props {
 	onClose: () => void;
+	onNavigateToMessage?: (messageId: string) => void;
 }
 
-let { onClose }: Props = $props();
+let { onClose, onNavigateToMessage }: Props = $props();
+
+// Media grid or the chat's links, grouped by site
+let view = $state<'media' | 'links' | 'calls'>('media');
+const LINKS_PER_GROUP = 20;
+// Links shown per site; "Show more" adds a batch so huge groups stay light
+let shownPerDomain = $state<Map<string, number>>(new Map());
+// Only scanned while the Links view is open
+const linkGroups = $derived(
+	view === 'links' ? groupChatLinks(appState.selectedChat?.messages ?? []) : [],
+);
+const calls = $derived(
+	view === 'calls' ? listCalls(appState.selectedChat?.messages ?? []) : [],
+);
+let callsShown = $state(200);
+const linkCount = $derived(linkGroups.reduce((n, g) => n + g.links.length, 0));
+$effect(() => {
+	appState.selectedChat;
+	shownPerDomain = new Map();
+	callsShown = 200;
+});
 
 $effect(() => {
 	galleryState.syncToChatTitle(appState.selectedChat?.title ?? null);
@@ -215,8 +239,16 @@ async function downloadSelected(): Promise<void> {
 
 			const filename = makeUniqueFilename(item.name, seenNames);
 			const folder = zip.folder(item.type) ?? zip;
-			const arrayBuffer = await entry.async('arraybuffer');
-			folder.file(filename, arrayBuffer);
+			// Date inside photos/videos (for photo apps) and on the ZIP entry (file date)
+			const sent = item.messageTimestamp
+				? new Date(item.messageTimestamp)
+				: null;
+			const data = stampMediaDate(
+				await entry.async('uint8array'),
+				item.name,
+				sent,
+			);
+			folder.file(filename, data, sent ? { date: sent } : undefined);
 
 			downloadProgress = Math.round(((i + 1) / total) * 100);
 		}
@@ -504,7 +536,20 @@ onDestroy(() => {
 				</IconButton>
 			</div>
 		</div>
-		{#if allItems.length > 0}
+		<div class="mt-2 inline-flex rounded-lg bg-gray-100 dark:bg-gray-700/60 p-0.5 text-xs" role="tablist">
+			{#each [['media', m.media_view_media()], ['links', m.media_view_links()], ['calls', m.media_view_calls()]] as [key, label] (key)}
+				<button
+					type="button"
+					role="tab"
+					aria-selected={view === key}
+					class="px-3 h-7 rounded-md cursor-pointer transition-colors {view === key
+						? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm'
+						: 'text-gray-500 dark:text-gray-400'}"
+					onclick={() => (view = key as typeof view)}
+				>{label}</button>
+			{/each}
+		</div>
+		{#if view === 'media' && allItems.length > 0}
 			<div class="wa-media-filters mt-2 flex flex-wrap gap-2" role="group" aria-label={m.media_filter_label()}>
 				{#each MEDIA_CATEGORIES as category (category)}
 					{#if categoryCounts[category] > 0}
@@ -535,7 +580,83 @@ onDestroy(() => {
 	</div>
 
 	<div class="flex-1 overflow-y-auto p-3" bind:this={scrollContainerRef} onscroll={fling.onScroll}>
-		{#if items.length === 0}
+		{#if view === 'calls'}
+			{#if calls.length === 0}
+				<p class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{m.media_calls_empty()}</p>
+			{:else}
+				<ul>
+					{#each calls.slice(0, callsShown) as call (call.messageId)}
+						<li>
+							<button
+								type="button"
+								class="w-full flex items-center gap-3 text-left px-2 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer"
+								onclick={() => onNavigateToMessage?.(call.messageId)}
+								title={m.media_gallery_go_to_message()}
+							>
+								<span class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 {call.missed
+									? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'
+									: 'bg-[var(--color-whatsapp-teal)]/15 text-[var(--color-whatsapp-teal)]'}">
+									<Icon name={call.video ? 'video' : 'phone'} size="sm" />
+								</span>
+								<span class="min-w-0 flex-1">
+									<span class="block text-sm text-gray-900 dark:text-gray-100 truncate">
+										{call.sender} · {call.missed
+											? call.video ? m.call_missed_video() : m.call_missed_voice()
+											: call.video ? m.call_video() : m.call_voice()}
+									</span>
+									<span class="block text-xs text-gray-500 dark:text-gray-400 truncate">
+										{call.timestamp.toLocaleString(getLocale(), { dateStyle: 'medium', timeStyle: 'short' })}{call.duration ? ` · ${call.duration}` : ''}
+									</span>
+								</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+				{#if calls.length > callsShown}
+					<button
+						type="button"
+						class="mt-1 px-2 text-xs font-medium text-[var(--color-whatsapp-teal)] cursor-pointer"
+						onclick={() => (callsShown += 200)}
+					>{m.media_links_show_more({ count: calls.length - callsShown })}</button>
+				{/if}
+			{/if}
+		{:else if view === 'links'}
+			{#if linkCount === 0}
+				<p class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{m.media_links_empty()}</p>
+			{:else}
+				{#each linkGroups as group (group.domain)}
+					{@const shown = shownPerDomain.get(group.domain) ?? LINKS_PER_GROUP}
+					<section class="mb-4">
+						<h3 class="sticky -top-3 z-10 -mx-3 px-3 py-2 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm text-xs font-medium text-gray-600 dark:text-gray-300 flex items-center gap-2">
+							<span class="truncate">{group.domain}</span>
+							<span class="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700/50 px-1.5 py-0.5 rounded-full">{group.links.length}</span>
+						</h3>
+						<ul>
+							{#each group.links.slice(0, shown) as link, i (i)}
+								<li>
+									<button
+										type="button"
+										class="w-full text-left px-2 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer"
+										onclick={() => onNavigateToMessage?.(link.messageId)}
+										title={m.media_gallery_go_to_message()}
+									>
+										<span class="block text-sm text-[var(--color-whatsapp-teal)] break-all line-clamp-2">{link.url}</span>
+										<span class="block text-xs text-gray-500 dark:text-gray-400 truncate">{link.sender} · {link.timestamp.toLocaleDateString(getLocale())}</span>
+									</button>
+								</li>
+							{/each}
+						</ul>
+						{#if group.links.length > shown}
+							<button
+								type="button"
+								class="mt-1 px-2 text-xs font-medium text-[var(--color-whatsapp-teal)] cursor-pointer"
+								onclick={() => (shownPerDomain = new Map(shownPerDomain).set(group.domain, shown + 100))}
+							>{m.media_links_show_more({ count: group.links.length - shown })}</button>
+						{/if}
+					</section>
+				{/each}
+			{/if}
+		{:else if items.length === 0}
 			<div class="flex flex-col items-center justify-center h-full px-4 py-8 text-center">
 				<Icon name="image" size="2xl" class="text-gray-300 dark:text-gray-600 mb-3" />
 				<p class="text-gray-500 dark:text-gray-400 text-sm">{m.media_gallery_empty()}</p>

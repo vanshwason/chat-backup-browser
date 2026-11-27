@@ -18,6 +18,7 @@ interface ElectronAPI {
 	readFileFromPath: (filePath: string) => Promise<FileReadResult>;
 	getPathForFile: (file: File) => string;
 	openExternal: (url: string) => Promise<void>;
+	setNextDownloadDate?: (iso: string | null) => void;
 	platform: string;
 	isElectron: boolean;
 	updater?: {

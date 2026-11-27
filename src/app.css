@@ -615,3 +615,8 @@ body {
 .mobile-wa .wa-thumb-caption {
 	display: none;
 }
+/* Search across chats fills the phone screen (the desktop panel is a fixed-width sidebar) */
+.mobile-wa .global-search-panel {
+	width: 100%;
+	border-left: 0;
+}

@@ -1,6 +1,6 @@
 <script lang="ts">
 import { get, set } from 'idb-keyval';
-import { onMount, tick } from 'svelte';
+import { onMount, type Snippet, tick } from 'svelte';
 import { fly } from 'svelte/transition';
 import { bookmarksState } from '$lib/bookmarks.svelte';
 import { galleryState } from '$lib/gallery.svelte';
@@ -31,6 +31,9 @@ interface Props {
 	onAutoLoadMediaChange: (archiveId: string, enabled: boolean) => void;
 	scrollToMessageId: string | null;
 	onNavigateToMessage: (messageId: string, archiveId: string) => void;
+	/** Search across all chats; receives a close callback */
+	globalSearch?: Snippet<[() => void]>;
+	onOpenGlobalSearch?: () => void;
 }
 
 let {
@@ -48,6 +51,8 @@ let {
 	onAutoLoadMediaChange,
 	scrollToMessageId,
 	onNavigateToMessage,
+	globalSearch,
+	onOpenGlobalSearch,
 }: Props = $props();
 
 const locale = $derived(getLocale());
@@ -58,6 +63,7 @@ let showInfo = $state(false);
 let showGallery = $state(false);
 let showBookmarks = $state(false);
 let showStats = $state(false);
+let showGlobalSearch = $state(false);
 let showPerspectivePicker = $state(false);
 let showViewAsPrompt = $state(false);
 let isSearching = $state(false);
@@ -312,6 +318,20 @@ onMount(() => {
 // Close panels when the lightbox or bookmarks jump to a message
 $effect(() => {
 	if (scrollToMessageId) {
+		showGlobalSearch = false;
+		// A search result can live in another chat: open that chat's screen
+		const selected = appState.selectedChat;
+		if (selected && selected.archiveId !== openArchiveId) {
+			openArchiveId = selected.archiveId;
+			if (!pushedHistory) {
+				history.pushState({ waMobileChat: true }, '');
+				pushedHistory = true;
+			}
+			// The chat view mounts scrolled to the bottom; jump again once it's up
+			const messageId = scrollToMessageId;
+			const archiveId = selected.archiveId;
+			setTimeout(() => onNavigateToMessage(messageId, archiveId), 300);
+		}
 		showGallery = false;
 		showBookmarks = false;
 		showInfo = false;
@@ -418,14 +438,29 @@ const bookmarkCount = $derived(
 				>
 					<Icon name={isDarkMode ? 'sun' : 'moon'} size="md" />
 				</button>
-				<button
-					type="button"
-					class="wa-icon-btn wa-accent"
-					onclick={() => fileInput?.click()}
-					aria-label={m.import_chat()}
-				>
-					<Icon name="plus" size="md" />
-				</button>
+				<div class="flex items-center gap-1">
+					{#if globalSearch}
+						<button
+							type="button"
+							class="wa-icon-btn wa-accent"
+							onclick={() => {
+								showGlobalSearch = true;
+								onOpenGlobalSearch?.();
+							}}
+							aria-label={m.global_search_toggle()}
+						>
+							<Icon name="search" size="md" />
+						</button>
+					{/if}
+					<button
+						type="button"
+						class="wa-icon-btn wa-accent"
+						onclick={() => fileInput?.click()}
+						aria-label={m.import_chat()}
+					>
+						<Icon name="plus" size="md" />
+					</button>
+				</div>
 			</div>
 			<h1 class="px-4 pb-2 text-[34px] leading-tight font-bold tracking-tight">
 				{m.mobile_chats_title()}
@@ -737,13 +772,26 @@ const bookmarkCount = $derived(
 		</div>
 	{/if}
 
+	<!-- ── Search across all chats (full screen) ── -->
+	{#if showGlobalSearch && globalSearch}
+		<div
+			class="absolute inset-0 z-40 flex flex-col bg-white dark:bg-gray-900 wa-safe-top wa-safe-bottom"
+			transition:fly={{ y: 40, duration: 220 }}
+		>
+			{@render globalSearch(() => (showGlobalSearch = false))}
+		</div>
+	{/if}
+
 	<!-- ── Media gallery (full screen) ── -->
 	{#if openChat && showGallery}
 		<div
 			class="absolute inset-0 z-30 flex flex-col bg-white dark:bg-gray-900 wa-safe-top wa-safe-bottom"
 			transition:fly={{ y: 40, duration: 220 }}
 		>
-			<MediaGallery onClose={() => (showGallery = false)} />
+			<MediaGallery
+				onClose={() => (showGallery = false)}
+				onNavigateToMessage={(messageId) => onNavigateToMessage(messageId, openChat.archiveId)}
+			/>
 		</div>
 	{/if}
 
