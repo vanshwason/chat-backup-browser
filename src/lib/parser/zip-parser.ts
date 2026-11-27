@@ -416,7 +416,9 @@ export async function parseZipFile(
 				`1. The date format is not recognized\n` +
 				`2. The file structure is different from expected\n` +
 				`3. The file may be corrupted\n\n` +
-				`Please report this issue with information about your WhatsApp version and phone model.`,
+				`Please report this issue with information about your WhatsApp version and phone model, ` +
+				`and include this format sample (letters and digits are hidden):\n\n` +
+				formatSample(chatContent),
 		);
 	}
 
@@ -461,6 +463,12 @@ function matchMediaToMessages(
 		const lowerName = normalizeMediaKey(media.name);
 
 		mediaMap.set(lowerName, media);
+
+		// iOS prefixes exported files with "<seq>-", but the chat names the original
+		const unprefixed = lowerName.replace(/^\d{8}-/, '');
+		if (unprefixed !== lowerName && unprefixed.length >= 8) {
+			mediaMap.set(unprefixed, media);
+		}
 
 		// Only add without extension for partial matching if name is long enough
 		// Lowered threshold from 10 to 8 chars to catch legitimate short filenames like "document.pdf"
@@ -512,44 +520,145 @@ const MEDIA_KIND_TO_TYPE: Record<string, ChatMessage['mediaType']> = {
 	STICKER: 'sticker',
 };
 
-function localTimestampKey(date: Date): string {
-	const pad = (n: number) => String(n).padStart(2, '0');
-	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+/**
+ * The shape of the first lines with every letter and digit hidden, so users
+ * can report an unreadable format without sharing what they wrote.
+ */
+export function formatSample(content: string, lines = 3): string {
+	return content
+		.split(/\r?\n/)
+		.filter((line) => line.trim())
+		.slice(0, lines)
+		.map((line) =>
+			line
+				.slice(0, 60)
+				.replace(/\p{Lu}/gu, 'X')
+				.replace(/\p{L}/gu, 'x')
+				.replace(/\p{N}/gu, 'd')
+				.replace(
+					/[\u00A0\u200B-\u200F\u202F\uFEFF]/g,
+					(c) =>
+						`<U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}>`,
+				),
+		)
+		.join('\n');
+}
+
+/** Wall-clock seconds of a message, ignoring time zones (matches file names). */
+function localSeconds(date: Date): number {
+	return (
+		Date.UTC(
+			date.getFullYear(),
+			date.getMonth(),
+			date.getDate(),
+			date.getHours(),
+			date.getMinutes(),
+			date.getSeconds(),
+		) / 1000
+	);
+}
+
+function fileSeconds(stamp: string): number {
+	const [y, mo, d, h, mi, s] = stamp.split('-').map(Number);
+	return Date.UTC(y, mo - 1, d, h, mi, s) / 1000;
+}
+
+// File names can be a whole time-zone offset away from the chat's clock
+// (seen: 1h30m), and a second or two late.
+const ZONE_STEP_S = 15 * 60;
+const MAX_ZONE_S = 14 * 60 * 60;
+const JITTER_S = 2;
+
+type TimedFile = { media: MediaFile; kind: string; seconds: number };
+
+/** The clock offset (file + offset = message) that lines up the most files. */
+function detectFileClockOffset(
+	files: TimedFile[],
+	messageSeconds: Set<number>,
+): number {
+	const hits = (offset: number) => {
+		let count = 0;
+		for (const f of files) {
+			for (let j = -JITTER_S; j <= JITTER_S; j++) {
+				if (messageSeconds.has(f.seconds + offset + j)) {
+					count++;
+					break;
+				}
+			}
+		}
+		return count;
+	};
+	let best = 0;
+	let bestHits = hits(0);
+	if (bestHits === files.length) return 0;
+	for (let offset = -MAX_ZONE_S; offset <= MAX_ZONE_S; offset += ZONE_STEP_S) {
+		if (offset === 0) continue;
+		const h = hits(offset);
+		if (h > bestHits) {
+			best = offset;
+			bestHits = h;
+		}
+	}
+	return best;
 }
 
 /**
  * Links media messages that name no file ("image omitted") to the exported
- * file sent at the same second, preferring a file of the same kind.
+ * file sent at the same time, preferring a file of the same kind.
  */
 function matchOmittedMediaByTimestamp(
 	messages: ChatMessage[],
 	mediaFiles: MediaFile[],
 ): ChatMessage[] {
-	const byTime = new Map<string, Array<{ media: MediaFile; kind: string }>>();
+	const files: TimedFile[] = [];
 	for (const media of mediaFiles) {
 		if (media.messageId) continue;
 		const match = TIMESTAMPED_MEDIA.exec(media.name);
 		if (!match) continue;
-		const list = byTime.get(match[2]) ?? [];
-		list.push({ media, kind: match[1].toUpperCase() });
-		byTime.set(match[2], list);
+		files.push({
+			media,
+			kind: match[1].toUpperCase(),
+			seconds: fileSeconds(match[2]),
+		});
 	}
-	if (byTime.size === 0) return messages;
+	if (files.length === 0) return messages;
+
+	const open = (m: ChatMessage) =>
+		m.isMediaMessage &&
+		!(m as ChatMessage & { mediaFile?: MediaFile }).mediaFile;
+	const messageSeconds = new Set<number>();
+	for (const m of messages)
+		if (open(m)) messageSeconds.add(localSeconds(m.timestamp));
+
+	const offset = detectFileClockOffset(files, messageSeconds);
+	const bySecond = new Map<number, TimedFile[]>();
+	for (const f of files) {
+		const key = f.seconds + offset;
+		const list = bySecond.get(key) ?? [];
+		list.push(f);
+		bySecond.set(key, list);
+	}
+
+	const take = (seconds: number, type: ChatMessage['mediaType']) => {
+		// Exact second first, then the nearest within the jitter window.
+		for (const j of [0, 1, -1, 2, -2]) {
+			const list = bySecond.get(seconds + j);
+			if (!list?.length) continue;
+			const index = Math.max(
+				0,
+				list.findIndex((c) => MEDIA_KIND_TO_TYPE[c.kind] === type),
+			);
+			return list.splice(index, 1)[0];
+		}
+		return null;
+	};
 
 	return messages.map((message) => {
-		const withMedia = message as ChatMessage & { mediaFile?: MediaFile };
-		if (!message.isMediaMessage || withMedia.mediaFile) return message;
+		if (!open(message)) return message;
+		const found = take(localSeconds(message.timestamp), message.mediaType);
+		if (!found) return message;
 
-		const candidates = byTime.get(localTimestampKey(message.timestamp));
-		if (!candidates?.length) return message;
-
-		const index = Math.max(
-			0,
-			candidates.findIndex(
-				(c) => MEDIA_KIND_TO_TYPE[c.kind] === message.mediaType,
-			),
-		);
-		const [{ media, kind }] = candidates.splice(index, 1);
+		const { media, kind } = found;
 		media.messageId = message.id;
 		media.messageTimestamp = message.timestamp.toISOString();
 		media.messageSender = message.sender || undefined;

@@ -608,14 +608,27 @@ const BRACKETED_SLASH_24H_PREFIX =
  * participate: their day-first interpretation is governed by the format
  * patterns below. Ambiguous chats keep the existing day-first default.
  */
-function detectMonthFirst(lines: string[]): boolean {
+// US iPhone exports: "[11/25/26, 10:15:30 PM]" (English AM/PM only; other
+// languages' AM/PM words stay day-first, GH-78)
+const SLASH_12H_PREFIX =
+	/^\[?(\d{1,2})\/(\d{1,2})\/(\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*[AaPp]\.?\s?[Mm]\.?[\]\s-]/;
+
+function match24h(normalized: string): RegExpMatchArray | null {
+	return (
+		normalized.match(SLASH_24H_PREFIX) ??
+		normalized.match(BRACKETED_SLASH_24H_PREFIX)
+	);
+}
+
+function detectMonthFirst(
+	lines: string[],
+	matchPrefix: (normalized: string) => RegExpMatchArray | null = match24h,
+): boolean {
 	let dayFirst = false;
 	let monthFirst = false;
 	for (const line of lines) {
 		const normalized = normalizeTimestampView(line);
-		const m =
-			normalized.match(SLASH_24H_PREFIX) ??
-			normalized.match(BRACKETED_SLASH_24H_PREFIX);
+		const m = matchPrefix(normalized);
 		if (!m) continue;
 		const first = parseInt(m[1], 10);
 		const second = parseInt(m[2], 10);
@@ -641,6 +654,7 @@ function detectMonthFirst(lines: string[]): boolean {
 function parseLine(
 	line: string,
 	monthFirst = false,
+	monthFirst12h = false,
 ): {
 	timestamp: Date;
 	sender: string;
@@ -656,16 +670,17 @@ function parseLine(
 	// Only swap bare/bracketed 24-hour slash dates. Localized AM/PM lines
 	// retain their day-first parsing even when the same export has US 24-hour
 	// evidence (GH-78).
-	const slash24HourMatch = monthFirst
-		? (matchView.match(SLASH_24H_PREFIX) ??
-			matchView.match(BRACKETED_SLASH_24H_PREFIX))
+	const slash24HourMatch = monthFirst ? match24h(matchView) : null;
+	const slash12HourMatch = monthFirst12h
+		? matchView.match(SLASH_12H_PREFIX)
 		: null;
-	const swappedView = slash24HourMatch
-		? matchView.replace(
-				SLASH_DATE_PREFIX,
-				(_m, br, a, b, y) => `${br}${b}/${a}/${y}`,
-			)
-		: matchView;
+	const swappedView =
+		slash24HourMatch || slash12HourMatch
+			? matchView.replace(
+					SLASH_DATE_PREFIX,
+					(_m, br, a, b, y) => `${br}${b}/${a}/${y}`,
+				)
+			: matchView;
 
 	for (const { regex, parse } of DATE_PATTERNS) {
 		const match = swappedView.match(regex);
@@ -755,6 +770,7 @@ function parseChatWithDateOrder(
 	content: string,
 	filename: string,
 	monthFirst: boolean,
+	monthFirst12h = false,
 ): ParsedChatInternal {
 	const lines = content.split(/\r?\n/);
 	const messages: ChatMessage[] = [];
@@ -789,7 +805,7 @@ function parseChatWithDateOrder(
 		const line = lines[lineIndex];
 		if (!line.trim()) continue;
 
-		const parsed = parseLine(line, monthFirst);
+		const parsed = parseLine(line, monthFirst, monthFirst12h);
 
 		if (parsed) {
 			// This is a new message - push previous one first
@@ -930,15 +946,29 @@ export function parseChat(
 	filename: string = 'WhatsApp Chat',
 	options: ParseChatOptions = {},
 ): ParsedChat {
-	const monthFirst = detectMonthFirst(content.split(/\r?\n/));
-	const parsed = parseChatWithDateOrder(content, filename, monthFirst);
+	const lines = content.split(/\r?\n/);
+	const monthFirst = detectMonthFirst(lines);
+	const monthFirst12h = detectMonthFirst(lines, (v) =>
+		v.match(SLASH_12H_PREFIX),
+	);
+	const parsed = parseChatWithDateOrder(
+		content,
+		filename,
+		monthFirst,
+		monthFirst12h,
+	);
 	if (!monthFirst || !options.includeValidationAliases) {
 		return publicParsedChat(parsed);
 	}
 
 	// v1.31.0 parsed US 24-hour slash exports as day-first. Build this snapshot
 	// only during remembered-chat restore; fresh imports keep no duplicate state.
-	const legacy = parseChatWithDateOrder(content, filename, false);
+	const legacy = parseChatWithDateOrder(
+		content,
+		filename,
+		false,
+		monthFirst12h,
+	);
 	const alias = createValidationAlias(legacy, parsed);
 	const result = publicParsedChat(parsed);
 	if (alias) result.validationAliases = [alias];
