@@ -3,6 +3,7 @@ import { onDestroy, onMount } from 'svelte';
 import type { GalleryItem } from '$lib/gallery.svelte';
 import {
 	getImageThumbnailUrl,
+	getVideoThumbnailUrl,
 	isAbortError,
 	runLimited,
 	type WorkOptions,
@@ -16,7 +17,6 @@ import {
 	clearFrameCache,
 	extractAudioDuration,
 	extractVideoFrames,
-	extractVideoThumbnail,
 	formatDuration,
 	getFrameIndexFromPosition,
 	type VideoFrameCache,
@@ -97,30 +97,16 @@ function distanceFromCenter(): number {
 async function ensureVideoThumbnail(): Promise<void> {
 	if (videoThumbnailUrl || isLoadingThumb) return;
 	if (item.type !== 'video') return;
-	if (item.media.remoteUrl) {
-		// The preview streams from the laptop, so it waits its turn too
-		isLoadingThumb = true;
-		try {
-			await runLimited(async () => {}, workOptions());
-			remoteVideoSrc = `${item.media.remoteUrl}#t=0.1`;
-		} catch (err) {
-			if (!isAbortError(err)) throw err;
-		} finally {
-			isLoadingThumb = false;
-		}
-		return;
-	}
 
+	// One small picture per video, saved on the device after the first time
 	isLoadingThumb = true;
 	try {
-		videoThumbnailUrl = await runLimited(async () => {
-			const blob = item.media.blob || (await loadMediaBlob());
-			return extractVideoThumbnail(blob);
-		}, workOptions());
+		videoThumbnailUrl = await getVideoThumbnailUrl(item.media, workOptions());
 	} catch (err) {
-		if (!isAbortError(err)) {
-			console.error('Failed to extract video thumbnail:', err);
-		}
+		if (isAbortError(err)) return;
+		console.error('Failed to extract video thumbnail:', err);
+		// Last resort on the phone: let the browser show the first frame
+		if (item.media.remoteUrl) remoteVideoSrc = `${item.media.remoteUrl}#t=0.1`;
 	} finally {
 		isLoadingThumb = false;
 	}

@@ -36,7 +36,7 @@ let savedCount: number | null = null;
  * The web version saves nothing: a chat opened there leaves no pictures behind.
  */
 export function savedThumbnailKey(media: MediaFile): string | null {
-	if (media.type !== 'image') return null;
+	if (media.type !== 'image' && media.type !== 'video') return null;
 	if (media.remoteUrl) return media.remoteUrl;
 	if (!isElectronApp()) return null;
 	const crc32 = (media._zipEntry as { _data?: { crc32?: number } } | undefined)
@@ -421,6 +421,109 @@ export async function getImageThumbnailUrl(
 
 	thumbnailPromiseCache.set(key, promise);
 	// An aborted wait leaves nothing cached, so the next request starts over
+	promise.catch(() => thumbnailPromiseCache.delete(key));
+	return promise;
+}
+
+/** Grabs one early frame of a video and scales it down to a small picture. */
+function grabVideoFrame(
+	source: Blob | string,
+	maxSize: number,
+	quality: number,
+): Promise<Blob> {
+	return new Promise((resolve, reject) => {
+		const video = document.createElement('video');
+		const objectUrl =
+			typeof source === 'string' ? null : URL.createObjectURL(source);
+		const done = () => {
+			clearTimeout(timer);
+			video.removeAttribute('src');
+			video.load();
+			if (objectUrl) URL.revokeObjectURL(objectUrl);
+		};
+		const fail = (message: string) => {
+			done();
+			reject(new Error(message));
+		};
+		const timer = setTimeout(() => fail('Video frame timed out'), 20_000);
+		video.muted = true;
+		video.playsInline = true;
+		video.preload = 'metadata';
+		video.addEventListener('error', () => fail('Failed to load video'));
+		video.addEventListener('loadedmetadata', () => {
+			// Early frame: on the phone only the first bytes have to come over
+			video.currentTime = Math.min(0.1, (video.duration || 1) / 2);
+		});
+		video.addEventListener(
+			'seeked',
+			() => {
+				const { videoWidth: w, videoHeight: h } = video;
+				if (!w || !h) return fail('Invalid video dimensions');
+				const scale = Math.min(1, maxSize / Math.max(w, h));
+				const canvas = document.createElement('canvas');
+				canvas.width = Math.max(1, Math.round(w * scale));
+				canvas.height = Math.max(1, Math.round(h * scale));
+				canvas
+					.getContext('2d')
+					?.drawImage(video, 0, 0, canvas.width, canvas.height);
+				done();
+				canvasToBlob(canvas, 'image/webp', quality).then(resolve, reject);
+			},
+			{ once: true },
+		);
+		video.src = objectUrl ?? (source as string);
+	});
+}
+
+/**
+ * Small picture of a video's first moments. Made once, then saved on the
+ * device like photo thumbnails, so a video never has to be read again just
+ * to show its tile.
+ */
+export async function getVideoThumbnailUrl(
+	media: MediaFile,
+	options?: WorkOptions,
+): Promise<string | null> {
+	if (media.type !== 'video') return null;
+	const key = media.path;
+	const cached = thumbnailUrlCache.get(key);
+	if (cached) return cached;
+	const pending = thumbnailPromiseCache.get(key);
+	if (pending) return pending;
+
+	const savedKey = savedThumbnailKey(media);
+	const promise = loadSavedThumbnail(savedKey).then(async (saved) => {
+		try {
+			if (saved) {
+				const url = URL.createObjectURL(saved);
+				cacheThumbnailUrl(key, url);
+				return url;
+			}
+			return await runLimited(async () => {
+				const source =
+					media.remoteUrl ??
+					media.blob ??
+					(media._zipEntry
+						? new Blob([await media._zipEntry.async('arraybuffer')], {
+								type: 'video/mp4',
+							})
+						: null);
+				if (!source) return null;
+				const blob = await grabVideoFrame(
+					source,
+					DEFAULT_MAX_SIZE,
+					DEFAULT_QUALITY,
+				);
+				const url = URL.createObjectURL(blob);
+				cacheThumbnailUrl(key, url);
+				if (savedKey) void saveThumbnail(savedKey, blob);
+				return url;
+			}, options);
+		} finally {
+			thumbnailPromiseCache.delete(key);
+		}
+	});
+	thumbnailPromiseCache.set(key, promise);
 	promise.catch(() => thumbnailPromiseCache.delete(key));
 	return promise;
 }

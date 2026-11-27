@@ -1,6 +1,6 @@
 <script lang="ts">
 import { get, set } from 'idb-keyval';
-import { onMount, type Snippet, tick } from 'svelte';
+import { onMount, type Snippet, tick, untrack } from 'svelte';
 import { fly } from 'svelte/transition';
 import { bookmarksState } from '$lib/bookmarks.svelte';
 import { galleryState } from '$lib/gallery.svelte';
@@ -315,28 +315,32 @@ onMount(() => {
 	};
 });
 
-// Close panels when the lightbox or bookmarks jump to a message
+// Close panels when the lightbox, bookmarks or search jump to a message.
+// Runs once per jump only: re-running when the chat closes would reopen it,
+// which made Back do nothing after a jump.
 $effect(() => {
-	if (scrollToMessageId) {
-		showGlobalSearch = false;
-		// A search result can live in another chat: open that chat's screen
-		const selected = appState.selectedChat;
-		if (selected && selected.archiveId !== openArchiveId) {
-			openArchiveId = selected.archiveId;
-			if (!pushedHistory) {
-				history.pushState({ waMobileChat: true }, '');
-				pushedHistory = true;
-			}
-			// The chat view mounts scrolled to the bottom; jump again once it's up
-			const messageId = scrollToMessageId;
-			const archiveId = selected.archiveId;
-			setTimeout(() => onNavigateToMessage(messageId, archiveId), 300);
-		}
-		showGallery = false;
-		showBookmarks = false;
-		showInfo = false;
-	}
+	const target = scrollToMessageId;
+	if (target) untrack(() => handleJump(target));
 });
+
+function handleJump(target: string) {
+	showGlobalSearch = false;
+	// A search result can live in another chat: open that chat's screen
+	const selected = appState.selectedChat;
+	if (selected && selected.archiveId !== openArchiveId) {
+		openArchiveId = selected.archiveId;
+		if (!pushedHistory) {
+			history.pushState({ waMobileChat: true }, '');
+			pushedHistory = true;
+		}
+		// The chat view mounts scrolled to the bottom; jump again once it's up
+		const archiveId = selected.archiveId;
+		setTimeout(() => onNavigateToMessage(target, archiveId), 300);
+	}
+	showGallery = false;
+	showBookmarks = false;
+	showInfo = false;
+}
 
 // ── Edge swipe back (home-screen app has no browser back gesture) ──────────
 const isStandalone =

@@ -26,10 +26,11 @@ describe('savedThumbnailKey', () => {
 		expect(savedThumbnailKey(photo())).toBe('zip:1234:5:IMG-1.jpg');
 	});
 
-	it('saves nothing for the web version, or for non-images', () => {
+	it('saves videos too, but nothing for the web version or other files', () => {
 		expect(savedThumbnailKey(photo())).toBeNull();
 		vi.stubGlobal('window', { electronAPI: {} });
-		expect(savedThumbnailKey(photo({ type: 'video' }))).toBeNull();
+		expect(savedThumbnailKey(photo({ type: 'video' }))).toBe('zip:1234:5:IMG-1.jpg');
+		expect(savedThumbnailKey(photo({ type: 'audio' }))).toBeNull();
 		expect(savedThumbnailKey(photo({ _zipEntry: undefined }))).toBeNull();
 	});
 });
